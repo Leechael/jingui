@@ -45,6 +45,26 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        run: |
+          chmod +x scripts/generate-changelog.sh
+          scripts/generate-changelog.sh "${{ github.ref_name }}"
+
+      - name: Commit changelog to default branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git stash
+          git checkout main
+          git stash pop
+          git add CHANGELOG.md
+          git commit -m "Update CHANGELOG for ${{ github.ref_name }}"
+          git push origin main
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:

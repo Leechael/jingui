@@ -182,11 +182,23 @@ jobs:
           echo "Built binaries:"
           ls -lh dist/
 
-      # ── Tag + GitHub Release ─────────────────────────────────────────
-      - name: Create tag
+      # ── Changelog ─────────────────────────────────────────────────────
+      - name: Generate changelog
+        run: |
+          chmod +x scripts/generate-changelog.sh
+          scripts/generate-changelog.sh "${{ steps.version.outputs.version }}"
+
+      - name: Commit changelog
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "Release ${{ steps.version.outputs.version }}"
+          git push origin HEAD:${{ needs.parse.outputs.head_ref }}
+
+      # ── Tag + GitHub Release ─────────────────────────────────────────
+      - name: Create tag
+        run: |
           git tag "${{ steps.version.outputs.version }}"
           git push origin "${{ steps.version.outputs.version }}"
 
