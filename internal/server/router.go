@@ -1,0 +1,36 @@
+package server
+
+import (
+	"github.com/aspect-build/jingui/internal/server/db"
+	"github.com/aspect-build/jingui/internal/server/handler"
+	"github.com/gin-gonic/gin"
+)
+
+// NewRouter creates and configures the Gin router with all routes.
+func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
+	r := gin.Default()
+
+	admin := AdminAuth(cfg.AdminToken)
+
+	v1 := r.Group("/v1")
+	{
+		// Admin-authenticated management endpoints
+		v1.POST("/apps", admin, handler.HandleCreateApp(store, cfg.MasterKey))
+		v1.POST("/instances", admin, handler.HandleRegisterInstance(store))
+		v1.GET("/credentials/gateway/:app_id", admin, handler.HandleOAuthGateway(store, cfg.MasterKey, cfg.BaseURL))
+		v1.POST("/credentials/device/:app_id", admin, handler.HandleDeviceAuth(store, cfg.MasterKey))
+		v1.PUT("/credentials/:app_id", admin, handler.HandlePutCredentials(store, cfg.MasterKey))
+
+		// OAuth callback — no admin auth (Google redirects the user's browser here)
+		v1.GET("/credentials/callback", handler.HandleOAuthCallback(store, cfg.MasterKey, cfg.BaseURL))
+
+		// Client proof-of-possession challenge (no admin auth).
+		v1.POST("/secrets/challenge", handler.HandleIssueChallenge(store))
+
+		// Secret fetch — requires proof-of-possession challenge response, then returns
+		// payload encrypted to the registered TEE public key.
+		v1.POST("/secrets/fetch", handler.HandleFetchSecrets(store, cfg.MasterKey))
+	}
+
+	return r
+}

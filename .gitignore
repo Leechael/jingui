@@ -1,0 +1,8 @@
+bin/
+*.db
+*.db-shm
+*.db-wal
+.appkeys.json
+.env
+/jingui
+/jingui-server

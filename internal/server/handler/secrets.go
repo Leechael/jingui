@@ -1,0 +1,302 @@
+package handler
+
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/aspect-build/jingui/internal/crypto"
+	"github.com/aspect-build/jingui/internal/refparser"
+	"github.com/aspect-build/jingui/internal/server/db"
+	"github.com/gin-gonic/gin"
+)
+
+const challengeTTL = 2 * time.Minute
+
+type issueChallengeRequest struct {
+	FID string `json:"fid" binding:"required"`
+}
+
+type issueChallengeResponse struct {
+	ChallengeID string `json:"challenge_id"`
+	Challenge   string `json:"challenge"`
+}
+
+type fetchSecretsRequest struct {
+	FID               string   `json:"fid" binding:"required"`
+	SecretReferences  []string `json:"secret_references" binding:"required"`
+	ChallengeID       string   `json:"challenge_id" binding:"required"`
+	ChallengeResponse string   `json:"challenge_response" binding:"required"`
+}
+
+type fetchSecretsResponse struct {
+	Secrets map[string]string `json:"secrets"`
+}
+
+type challengeEntry struct {
+	FID       string
+	Nonce     []byte
+	ExpiresAt time.Time
+}
+
+type challengeStore struct {
+	mu      sync.Mutex
+	entries map[string]challengeEntry
+}
+
+var fetchChallengeStore = &challengeStore{
+	entries: make(map[string]challengeEntry),
+}
+
+func (s *challengeStore) issue(fid string, nonce []byte, now time.Time) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.gcLocked(now)
+
+	idBytes := make([]byte, 16)
+	if _, err := rand.Read(idBytes); err != nil {
+		return "", fmt.Errorf("generate challenge id: %w", err)
+	}
+	id := hex.EncodeToString(idBytes)
+
+	nonceCopy := make([]byte, len(nonce))
+	copy(nonceCopy, nonce)
+
+	s.entries[id] = challengeEntry{
+		FID:       fid,
+		Nonce:     nonceCopy,
+		ExpiresAt: now.Add(challengeTTL),
+	}
+	return id, nil
+}
+
+func (s *challengeStore) consume(challengeID, fid string, response []byte, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.gcLocked(now)
+
+	entry, ok := s.entries[challengeID]
+	if !ok {
+		return fmt.Errorf("challenge not found or expired")
+	}
+	delete(s.entries, challengeID)
+
+	if entry.FID != fid {
+		return fmt.Errorf("challenge fid mismatch")
+	}
+	if subtle.ConstantTimeCompare(entry.Nonce, response) != 1 {
+		return fmt.Errorf("invalid challenge response")
+	}
+	return nil
+}
+
+func (s *challengeStore) gcLocked(now time.Time) {
+	for id, e := range s.entries {
+		if now.After(e.ExpiresAt) {
+			delete(s.entries, id)
+		}
+	}
+}
+
+// HandleIssueChallenge handles POST /v1/secrets/challenge.
+// It returns an ECIES-encrypted random challenge bound to the given FID.
+func HandleIssueChallenge(store *db.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req issueChallengeRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		inst, err := store.GetInstance(req.FID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+		if inst == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+		if len(inst.PublicKey) != 32 {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid instance public key length"})
+			return
+		}
+
+		nonce := make([]byte, 32)
+		if _, err := rand.Read(nonce); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate challenge"})
+			return
+		}
+
+		var pubKey [32]byte
+		copy(pubKey[:], inst.PublicKey)
+		challengeBlob, err := crypto.Encrypt(pubKey, nonce)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt challenge"})
+			return
+		}
+
+		challengeID, err := fetchChallengeStore.issue(req.FID, nonce, time.Now())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue challenge"})
+			return
+		}
+
+		c.JSON(http.StatusOK, issueChallengeResponse{
+			ChallengeID: challengeID,
+			Challenge:   base64.StdEncoding.EncodeToString(challengeBlob),
+		})
+	}
+}
+
+// HandleFetchSecrets handles POST /v1/secrets/fetch.
+func HandleFetchSecrets(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req fetchSecretsRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		challengeResponse, err := base64.StdEncoding.DecodeString(req.ChallengeResponse)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "challenge_response must be valid base64"})
+			return
+		}
+		if err := fetchChallengeStore.consume(req.ChallengeID, req.FID, challengeResponse, time.Now()); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "challenge verification failed: " + err.Error()})
+			return
+		}
+
+		// Look up TEE instance by FID
+		inst, err := store.GetInstance(req.FID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+		if inst == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+
+		// Update last used
+		_ = store.UpdateLastUsed(req.FID)
+
+		// Build recipient public key
+		var pubKey [32]byte
+		copy(pubKey[:], inst.PublicKey)
+
+		secrets := make(map[string]string)
+
+		for _, refStr := range req.SecretReferences {
+			ref, err := refparser.Parse(refStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid reference: " + refStr})
+				return
+			}
+
+			// Validate: ref's app_id must match instance's bound_app_id
+			if ref.AppID != inst.BoundAppID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "app_id mismatch for reference: " + refStr})
+				return
+			}
+
+			// Validate: ref's secret_name must match instance's bound_user_id
+			if ref.SecretName != inst.BoundUserID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "user_id mismatch for reference: " + refStr})
+				return
+			}
+
+			var plainValue []byte
+
+			switch ref.FieldName {
+			case "client_id", "client_secret":
+				plainValue, err = extractAppField(store, masterKey, ref.AppID, ref.FieldName)
+			case "refresh_token":
+				plainValue, err = extractUserSecret(store, masterKey, ref.AppID, ref.SecretName, ref.FieldName)
+			default:
+				c.JSON(http.StatusBadRequest, gin.H{"error": "unknown field: " + ref.FieldName})
+				return
+			}
+
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve " + refStr + ": " + err.Error()})
+				return
+			}
+
+			// ECIES encrypt the value with the TEE instance's public key
+			encrypted, err := crypto.Encrypt(pubKey, plainValue)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "encryption failed"})
+				return
+			}
+
+			secrets[refStr] = base64.StdEncoding.EncodeToString(encrypted)
+		}
+
+		c.JSON(http.StatusOK, fetchSecretsResponse{Secrets: secrets})
+	}
+}
+
+func extractAppField(store *db.Store, masterKey [32]byte, appID, fieldName string) ([]byte, error) {
+	app, err := store.GetApp(appID)
+	if err != nil {
+		return nil, err
+	}
+	if app == nil {
+		return nil, fmt.Errorf("app not found: %s", appID)
+	}
+
+	credJSON, err := crypto.DecryptAtRest(masterKey, app.CredentialsEncrypted)
+	if err != nil {
+		return nil, err
+	}
+
+	creds, err := parseGoogleCreds(credJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	switch fieldName {
+	case "client_id":
+		return []byte(creds.ClientID), nil
+	case "client_secret":
+		return []byte(creds.ClientSecret), nil
+	default:
+		return nil, fmt.Errorf("unknown app field: %s", fieldName)
+	}
+}
+
+func extractUserSecret(store *db.Store, masterKey [32]byte, appID, userID, fieldName string) ([]byte, error) {
+	us, err := store.GetUserSecret(appID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if us == nil {
+		return nil, fmt.Errorf("secret not found for %s/%s", appID, userID)
+	}
+
+	secretJSON, err := crypto.DecryptAtRest(masterKey, us.SecretEncrypted)
+	if err != nil {
+		return nil, err
+	}
+
+	var secretMap map[string]string
+	if err := json.Unmarshal(secretJSON, &secretMap); err != nil {
+		return nil, err
+	}
+
+	val, ok := secretMap[fieldName]
+	if !ok {
+		return nil, fmt.Errorf("field %q not found in secret", fieldName)
+	}
+	return []byte(val), nil
+}
