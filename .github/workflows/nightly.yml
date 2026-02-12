@@ -1,0 +1,40 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="nightly-$(date -u +%Y%m%d)"
+          COMMIT="$(git rev-parse --short HEAD)"
+          LDFLAGS="-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}"
+          go build -ldflags "${LDFLAGS}" -o jingui-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/jingui
+          go build -ldflags "${LDFLAGS}" -o jingui-server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/jingui-server
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            jingui-${{ matrix.goos }}-${{ matrix.goarch }}
+            jingui-server-${{ matrix.goos }}-${{ matrix.goarch }}
+          retention-days: 7

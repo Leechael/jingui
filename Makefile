@@ -3,7 +3,7 @@ COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS   := -X github.com/aspect-build/jingui/internal/version.Version=$(VERSION) \
              -X github.com/aspect-build/jingui/internal/version.GitCommit=$(COMMIT)
 
-.PHONY: build build-client build-server build-dev test clean \
+.PHONY: build build-client build-server build-dev test clean lint bdd ci \
 	build-client-linux-amd64 build-client-linux-arm64 build-client-darwin-amd64 build-client-darwin-arm64 \
 	build-server-linux-amd64 build-server-linux-arm64 build-server-darwin-amd64 build-server-darwin-arm64 \
 	build-all
@@ -55,6 +55,15 @@ build-all: \
 
 test:
 	go test ./... -v -race
+
+lint:
+	go vet ./...
+	gofmt -l .
+
+bdd:
+	go test -tags bdd ./internal -v -run TestBDD
+
+ci: lint test bdd
 
 clean:
 	rm -rf bin/
