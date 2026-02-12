@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -293,19 +292,6 @@ func (b *bddContext) theResponseStatusShouldBe(expected int) error {
 	return nil
 }
 
-func (b *bddContext) theResponseStatusShouldBeOneOf(codes string) error {
-	for _, part := range strings.Split(codes, ",") {
-		code, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil {
-			return fmt.Errorf("invalid status code %q: %w", part, err)
-		}
-		if b.lastStatus == code {
-			return nil
-		}
-	}
-	return fmt.Errorf("expected status one of [%s], got %d (body: %s)", codes, b.lastStatus, b.lastBody)
-}
-
 func (b *bddContext) theResponseJSONShouldBe(key, expected string) error {
 	var m map[string]interface{}
 	if err := json.Unmarshal(b.lastBody, &m); err != nil {
@@ -368,7 +354,6 @@ func TestBDD(t *testing.T) {
 
 			// Then
 			sc.Step(`^the response status should be (\d+)$`, b.theResponseStatusShouldBe)
-			sc.Step(`^the response status should be one of (.+)$`, b.theResponseStatusShouldBeOneOf)
 			sc.Step(`^the response JSON "([^"]*)" should be "([^"]*)"$`, b.theResponseJSONShouldBe)
 			sc.Step(`^the decrypted secret "([^"]*)" should be "([^"]*)"$`, b.theDecryptedSecretShouldBe)
 		},

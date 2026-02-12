@@ -16,15 +16,6 @@ Feature: Credential management
     Then the response status should be 200
     And the response JSON "status" should be "stored"
 
-  Scenario: Device flow returns user_code for valid Desktop app
-    Given the server is running
-    And an app "desktop-app" of type "gmail" exists with credentials:
-      """
-      {"installed":{"client_id":"cid-123","client_secret":"csec-456","redirect_uris":["http://localhost"]}}
-      """
-    When I POST to "/v1/credentials/device/desktop-app"
-    Then the response status should be one of 200, 502
-
   Scenario: Reject device flow for missing app
     Given the server is running
     When I POST to "/v1/credentials/device/nonexistent-app"

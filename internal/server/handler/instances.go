@@ -11,7 +11,7 @@ import (
 
 type registerInstanceRequest struct {
 	PublicKey   string `json:"public_key" binding:"required"`
-	BoundAppID string `json:"bound_app_id" binding:"required"`
+	BoundAppID  string `json:"bound_app_id" binding:"required"`
 	BoundUserID string `json:"bound_user_id" binding:"required"`
 	Label       string `json:"label"`
 }

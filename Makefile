@@ -58,7 +58,7 @@ test:
 
 lint:
 	go vet ./...
-	gofmt -l .
+	@test -z "$$(gofmt -l .)" || { echo "gofmt: unformatted files:"; gofmt -l .; exit 1; }
 
 bdd:
 	go test -tags bdd ./internal -v -run TestBDD

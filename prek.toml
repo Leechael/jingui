@@ -3,5 +3,5 @@ repo = "local"
 hooks = [
   { id = "go-vet", name = "go vet", language = "system", entry = "go vet ./...", pass_filenames = false, types = ["go"] },
   { id = "go-test", name = "go test", language = "system", entry = "go test ./... -race -count=1", pass_filenames = false, types = ["go"] },
-  { id = "gofmt", name = "gofmt", language = "system", entry = "gofmt -l -d", types = ["go"] },
+  { id = "gofmt", name = "gofmt", language = "system", entry = "gofmt -w", types = ["go"] },
 ]
