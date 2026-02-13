@@ -275,6 +275,538 @@ func TestEndToEnd(t *testing.T) {
 	fmt.Println("Integration test: all secrets resolved, encrypted, decrypted, and access control verified")
 }
 
+// --- Admin CRUD endpoint tests ---
+
+func TestListApps(t *testing.T) {
+	ts, _, _ := setupTestServer(t)
+
+	// Empty list
+	resp, err := adminRequest("GET", ts.URL+"/v1/apps", nil)
+	if err != nil {
+		t.Fatalf("GET /v1/apps: %v", err)
+	}
+	var apps []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&apps)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if len(apps) != 0 {
+		t.Fatalf("expected 0 apps, got %d", len(apps))
+	}
+
+	// Create an app then list
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	resp, _ = adminRequest("GET", ts.URL+"/v1/apps", nil)
+	json.NewDecoder(resp.Body).Decode(&apps)
+	resp.Body.Close()
+	if len(apps) != 1 {
+		t.Fatalf("expected 1 app, got %d", len(apps))
+	}
+	if apps[0]["app_id"] != "app1" {
+		t.Errorf("expected app_id=app1, got %v", apps[0]["app_id"])
+	}
+}
+
+func TestGetApp(t *testing.T) {
+	ts, _, _ := setupTestServer(t)
+
+	// 404
+	resp, _ := adminRequest("GET", ts.URL+"/v1/apps/nonexistent", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create then get
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	resp, _ = adminRequest("GET", ts.URL+"/v1/apps/app1", nil)
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if body["app_id"] != "app1" {
+		t.Errorf("expected app_id=app1, got %v", body["app_id"])
+	}
+	if body["has_credentials"] != true {
+		t.Errorf("expected has_credentials=true, got %v", body["has_credentials"])
+	}
+	// Should NOT contain credentials_encrypted
+	if _, ok := body["credentials_encrypted"]; ok {
+		t.Error("response should not contain credentials_encrypted")
+	}
+}
+
+func TestDeleteApp_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// 404
+	resp, _ := adminRequest("DELETE", ts.URL+"/v1/apps/nonexistent", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create app with dependent secret → 409 without cascade
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1", nil)
+	if resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 409, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// Cascade delete → 200
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1?cascade=true", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	var delBody map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&delBody)
+	resp.Body.Close()
+	if delBody["status"] != "deleted" {
+		t.Errorf("expected status=deleted, got %v", delBody["status"])
+	}
+
+	// Verify app is gone
+	resp, _ = adminRequest("GET", ts.URL+"/v1/apps/app1", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestDeleteApp_Simple(t *testing.T) {
+	ts, _, _ := setupTestServer(t)
+
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ := adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	// Simple delete (no dependents) → 200
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+}
+
+func TestListInstances_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// Empty list
+	resp, _ := adminRequest("GET", ts.URL+"/v1/instances", nil)
+	var instances []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&instances)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if len(instances) != 0 {
+		t.Fatalf("expected 0 instances, got %d", len(instances))
+	}
+
+	// Create app + secret + instance, then list
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	var teePriv [32]byte
+	rand.Read(teePriv[:])
+	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
+	instReq, _ := json.Marshal(map[string]string{
+		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
+		"bound_user_id": "u@example.com", "label": "test",
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
+	resp.Body.Close()
+
+	resp, _ = adminRequest("GET", ts.URL+"/v1/instances", nil)
+	json.NewDecoder(resp.Body).Decode(&instances)
+	resp.Body.Close()
+	if len(instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(instances))
+	}
+	// public_key should be hex string, not base64
+	pk, ok := instances[0]["public_key"].(string)
+	if !ok || len(pk) != 64 {
+		t.Errorf("expected 64-char hex public_key, got %q", pk)
+	}
+}
+
+func TestGetInstance_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// 404
+	resp, _ := adminRequest("GET", ts.URL+"/v1/instances/nonexistent", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create and get
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	var teePriv [32]byte
+	rand.Read(teePriv[:])
+	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
+	instReq, _ := json.Marshal(map[string]string{
+		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
+		"bound_user_id": "u@example.com",
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
+	var instResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&instResp)
+	resp.Body.Close()
+	fid := instResp["fid"]
+
+	resp, _ = adminRequest("GET", ts.URL+"/v1/instances/"+fid, nil)
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if body["fid"] != fid {
+		t.Errorf("expected fid=%s, got %v", fid, body["fid"])
+	}
+	if body["public_key"] != hex.EncodeToString(teePub) {
+		t.Error("public_key should be hex-encoded")
+	}
+}
+
+func TestDeleteInstance_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// 404
+	resp, _ := adminRequest("DELETE", ts.URL+"/v1/instances/nonexistent", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create and delete
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	var teePriv [32]byte
+	rand.Read(teePriv[:])
+	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
+	instReq, _ := json.Marshal(map[string]string{
+		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
+		"bound_user_id": "u@example.com",
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
+	var instResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&instResp)
+	resp.Body.Close()
+	fid := instResp["fid"]
+
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/instances/"+fid, nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	var delBody map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&delBody)
+	resp.Body.Close()
+	if delBody["status"] != "deleted" {
+		t.Errorf("expected status=deleted, got %v", delBody["status"])
+	}
+
+	// Verify gone
+	resp, _ = adminRequest("GET", ts.URL+"/v1/instances/"+fid, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestListUserSecrets_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// Empty list
+	resp, _ := adminRequest("GET", ts.URL+"/v1/user-secrets", nil)
+	var secrets []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&secrets)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if len(secrets) != 0 {
+		t.Fatalf("expected 0 secrets, got %d", len(secrets))
+	}
+
+	// Create app + secrets
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	for _, appID := range []string{"app1", "app2"} {
+		appReq, _ := json.Marshal(map[string]interface{}{
+			"app_id": appID, "name": appID, "service_type": "gmail",
+			"credentials_json": json.RawMessage(credJSON),
+		})
+		resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+		resp.Body.Close()
+	}
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{AppID: "app1", UserID: "u1@example.com", SecretEncrypted: encrypted})
+	store.UpsertUserSecret(&db.UserSecret{AppID: "app1", UserID: "u2@example.com", SecretEncrypted: encrypted})
+	store.UpsertUserSecret(&db.UserSecret{AppID: "app2", UserID: "u1@example.com", SecretEncrypted: encrypted})
+
+	// List all
+	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets", nil)
+	json.NewDecoder(resp.Body).Decode(&secrets)
+	resp.Body.Close()
+	if len(secrets) != 3 {
+		t.Fatalf("expected 3 secrets, got %d", len(secrets))
+	}
+	// Should NOT contain secret_encrypted
+	for _, s := range secrets {
+		if _, ok := s["secret_encrypted"]; ok {
+			t.Error("response should not contain secret_encrypted")
+		}
+	}
+
+	// Filter by app_id
+	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets?app_id=app1", nil)
+	json.NewDecoder(resp.Body).Decode(&secrets)
+	resp.Body.Close()
+	if len(secrets) != 2 {
+		t.Fatalf("expected 2 secrets for app1, got %d", len(secrets))
+	}
+
+	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets?app_id=app2", nil)
+	json.NewDecoder(resp.Body).Decode(&secrets)
+	resp.Body.Close()
+	if len(secrets) != 1 {
+		t.Fatalf("expected 1 secret for app2, got %d", len(secrets))
+	}
+}
+
+func TestGetUserSecret_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// 404
+	resp, _ := adminRequest("GET", ts.URL+"/v1/user-secrets/app1/user1", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create and get
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if body["app_id"] != "app1" {
+		t.Errorf("expected app_id=app1, got %v", body["app_id"])
+	}
+	if body["has_secret"] != true {
+		t.Errorf("expected has_secret=true, got %v", body["has_secret"])
+	}
+	if _, ok := body["secret_encrypted"]; ok {
+		t.Error("response should not contain secret_encrypted")
+	}
+}
+
+func TestDeleteUserSecret_HTTP(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	// 404
+	resp, _ := adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/user1", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create app + secret + instance → 409 without cascade
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	var teePriv [32]byte
+	rand.Read(teePriv[:])
+	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
+	instReq, _ := json.Marshal(map[string]string{
+		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
+		"bound_user_id": "u@example.com",
+	})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
+	resp.Body.Close()
+
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	if resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 409, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// Cascade → 200
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/u@example.com?cascade=true", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	var delBody map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&delBody)
+	resp.Body.Close()
+	if delBody["status"] != "deleted" {
+		t.Errorf("expected status=deleted, got %v", delBody["status"])
+	}
+
+	// Verify gone
+	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestDeleteUserSecret_Simple(t *testing.T) {
+	ts, store, masterKey := setupTestServer(t)
+
+	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
+	appReq, _ := json.Marshal(map[string]interface{}{
+		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"credentials_json": json.RawMessage(credJSON),
+	})
+	resp, _ := adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	resp.Body.Close()
+
+	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
+	store.UpsertUserSecret(&db.UserSecret{
+		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	})
+
+	// No dependents → simple delete works
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminCRUD_RequiresAuth(t *testing.T) {
+	ts, _, _ := setupTestServer(t)
+
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/v1/apps"},
+		{"GET", "/v1/apps/test"},
+		{"DELETE", "/v1/apps/test"},
+		{"GET", "/v1/instances"},
+		{"GET", "/v1/instances/test"},
+		{"DELETE", "/v1/instances/test"},
+		{"GET", "/v1/user-secrets"},
+		{"GET", "/v1/user-secrets/app/user"},
+		{"DELETE", "/v1/user-secrets/app/user"},
+	}
+
+	for _, ep := range endpoints {
+		req, _ := http.NewRequest(ep.method, ts.URL+ep.path, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", ep.method, ep.path, err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s %s without auth: expected 401, got %d", ep.method, ep.path, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+}
+
 func TestAdminAuth_Rejected(t *testing.T) {
 	ts, _, _ := setupTestServer(t)
 

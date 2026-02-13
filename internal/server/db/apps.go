@@ -2,7 +2,11 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // CreateApp inserts a new app into the database.
@@ -53,4 +57,58 @@ func (s *Store) ListApps() ([]App, error) {
 		apps = append(apps, a)
 	}
 	return apps, rows.Err()
+}
+
+// ErrAppHasDependents is returned when deleting an app that still has user_secrets.
+var ErrAppHasDependents = errors.New("app has dependent records; delete them first or use ?cascade=true")
+
+// DeleteApp deletes an app by ID. Returns true if a row was deleted.
+// Returns ErrAppHasDependents if foreign key constraints prevent deletion.
+func (s *Store) DeleteApp(appID string) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM apps WHERE app_id = ?`, appID)
+	if err != nil {
+		var sqliteErr *sqlite.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY {
+			return false, ErrAppHasDependents
+		}
+		return false, fmt.Errorf("delete app: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// DeleteAppCascade deletes an app and all its dependent user_secrets and tee_instances in a transaction.
+// Returns true if the app existed and was deleted.
+func (s *Store) DeleteAppCascade(appID string) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete tee_instances that reference user_secrets of this app
+	if _, err := tx.Exec(`DELETE FROM tee_instances WHERE bound_app_id = ?`, appID); err != nil {
+		return false, fmt.Errorf("delete instances for app: %w", err)
+	}
+
+	// Delete user_secrets for this app
+	if _, err := tx.Exec(`DELETE FROM user_secrets WHERE app_id = ?`, appID); err != nil {
+		return false, fmt.Errorf("delete secrets for app: %w", err)
+	}
+
+	// Delete the app itself
+	res, err := tx.Exec(`DELETE FROM apps WHERE app_id = ?`, appID)
+	if err != nil {
+		return false, fmt.Errorf("delete app: %w", err)
+	}
+
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return false, nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit tx: %w", err)
+	}
+	return true, nil
 }
