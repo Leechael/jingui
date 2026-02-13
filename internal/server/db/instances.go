@@ -2,7 +2,18 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
+)
+
+// Sentinel errors for RegisterInstance.
+var (
+	ErrInstanceDuplicateFID    = errors.New("instance with this FID already exists")
+	ErrInstanceDuplicateKey    = errors.New("instance with this public key already exists")
+	ErrInstanceAppUserNotFound = errors.New("bound app/user not found: the app must be registered and the user must have completed OAuth authorization before registering an instance")
 )
 
 // RegisterInstance inserts a new TEE instance.
@@ -13,6 +24,17 @@ func (s *Store) RegisterInstance(inst *TEEInstance) error {
 		inst.FID, inst.PublicKey, inst.BoundAppID, inst.BoundUserID, inst.Label,
 	)
 	if err != nil {
+		var sqliteErr *sqlite.Error
+		if errors.As(err, &sqliteErr) {
+			switch sqliteErr.Code() {
+			case sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY:
+				return ErrInstanceAppUserNotFound
+			case sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
+				return ErrInstanceDuplicateFID
+			case sqlite3.SQLITE_CONSTRAINT_UNIQUE:
+				return ErrInstanceDuplicateKey
+			}
+		}
 		return fmt.Errorf("register instance: %w", err)
 	}
 	return nil

@@ -181,6 +181,9 @@ func TestTEEInstanceRegister_ForeignKeyEnforced(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected foreign-key error when no matching user_secret exists")
 	}
+	if err != ErrInstanceAppUserNotFound {
+		t.Fatalf("expected ErrInstanceAppUserNotFound, got: %v", err)
+	}
 }
 
 func TestTEEInstanceRegister_PublicKeyUnique(t *testing.T) {
@@ -221,5 +224,8 @@ func TestTEEInstanceRegister_PublicKeyUnique(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected unique constraint error for duplicate public_key")
+	}
+	if err != ErrInstanceDuplicateKey {
+		t.Fatalf("expected ErrInstanceDuplicateKey, got: %v", err)
 	}
 }
