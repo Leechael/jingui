@@ -23,8 +23,13 @@ func LoadConfig() (*Config, error) {
 	if masterKeyHex == "" {
 		return nil, fmt.Errorf("JINGUI_MASTER_KEY is required")
 	}
+	masterKeyHex = strings.TrimSpace(masterKeyHex)
 	if len(masterKeyHex) != 64 {
-		return nil, fmt.Errorf("JINGUI_MASTER_KEY must be 64 hex characters (32 bytes)")
+		preview := masterKeyHex
+		if len(preview) > 8 {
+			preview = preview[:4] + "..." + preview[len(preview)-4:]
+		}
+		return nil, fmt.Errorf("JINGUI_MASTER_KEY must be 64 hex characters (32 bytes), got %d chars: %s", len(masterKeyHex), preview)
 	}
 	mkBytes, err := hex.DecodeString(masterKeyHex)
 	if err != nil {
