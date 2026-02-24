@@ -5,6 +5,9 @@
 
 > 如果你要先做一轮本地快速全链路回归，优先运行：`scripts/manual-test.sh`。
 > 该脚本已覆盖 app / instance / user-secret 的新增 admin CRUD 检查与级联删除场景。
+>
+> ⚠️ 设计已确认将重构为 `jingui://<service>/<slug>/<field>` 语义，`app_id` 不再出现在 ref 中。
+> 本文部分示例仍使用旧格式，待 schema/handler 重构完成后会统一替换。
 
 ---
 

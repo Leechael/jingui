@@ -112,20 +112,22 @@
 
 ### 3.2. 秘密引用格式 (Secret Reference Syntax)
 
-为了在配置文件或代码中引用秘密，我们采用与 1Password 类似的 URI 格式。
+为了在配置文件或代码中引用秘密，我们采用 URI 格式：
 
-**格式**: `jingui://<app_id>/<secret_name>/<field_name>`
+**格式**: `jingui://<service>/<slug_or_email>/<field_name>`
 
 - **`jingui://`**: 协议头，标识这是一个金匮秘密引用。
-- **`<app_id>`**: 在服务器上注册的应用 ID。
-- **`<secret_name>`**: 该应用下的秘密名称（例如，一个特定的用户授权）。
-- **`<field_name>`**: 秘密对象中的具体字段（例如，`refresh_token` 或 `api_key`）。
+- **`<service>`**: 外部服务名（如 `gmail`、`github`）。
+- **`<slug_or_email>`**: 服务内命名空间（邮箱、别名、工作空间标识）。
+- **`<field_name>`**: 秘密对象中的具体字段（例如 `token`、`client_id`、`client_secret`）。
+
+> 设计约束：`app_id` 不出现在 secret reference 中。`app_id` 属于工作负载身份，由 TEE/RA-TLS 认证链提供。
 
 **示例**:
 
 ```
-# 引用 Google Drive 应用中，用户 a@b.com 的 refresh_token
-GOOGLE_REFRESH_TOKEN="jingui://gdrive-app-123/user-a-b-com/refresh_token"
+GMAIL_TOKEN="jingui://gmail/foo@example.com/token"
+GMAIL_WORK_TOKEN="jingui://gmail/work/token"
 ```
 
 ### 3.3. `jingui run` 的工作流程与安全机制
@@ -156,72 +158,67 @@ GOOGLE_REFRESH_TOKEN="jingui://gdrive-app-123/user-a-b-com/refresh_token"
 
 金匮服务器是整个系统的中央凭证授权和分发中心。**本章节的设计完全基于原始的《凭证保险库产品设计》文档**，确保所有原始设计意图和技术细节都被完整保留。
 
-### 4.1. 核心职责 (源自原始 PD)
+### 4.1. 核心职责 (修订)
 
-- **应用管理 (App Management)**：负责第三方应用 (App) 的注册和凭证管理。每个 App 都有一个唯一的 `app_id`，并存储其 `credentials.json`（加密存储）。
-- **OAuth 授权网关 (OAuth Gateway)**：为人类用户（如开发者、管理员）提供一个统一的 OAuth 授权流程，以安全地获取和存储用于访问第三方服务的 `refresh_token`。
-- **TEE 实例注册 (Instance Registration)**：维护一个 TEE 实例身份 (FID) 到其公钥的注册表。此注册过程必须是安全的，通常与 KMS 或远程证明流程集成。
-- **按需加密分发 (On-Demand Encrypted Dispatch)**：服务器的核心安全功能。它从不存储明文秘密。当收到来自已验证的 TEE 客户端的请求时，它会：
-    1.  在内部解密存储的 `refresh_token`（使用服务器自身的主密钥）。
-    2.  使用请求方 TEE 实例的公钥，通过 ECIES 方案**实时加密**该 `refresh_token`。
-    3.  将加密后的数据包返回给客户端。
-- **静态数据加密 (Encryption at Rest)**：所有持久化存储在数据库中的敏感信息（如 App 的 `credentials.json`、用户的 `refresh_token`）都必须使用服务器自身的主密钥进行加密。
+- **工作负载应用管理 (Workload App Management)**：管理 CVM/Agent 工作负载身份。每个工作负载有唯一 `app_id`（来自 dstack 语义），这是权限边界的主键。
+- **服务凭证管理 (Service Secret Management)**：管理用户在外部服务（如 Gmail）上的授权秘密，按 `(app_id, user_id, service, slug)` 组织并加密存储。
+- **TEE 实例注册 (Instance Registration)**：维护 TEE 实例身份到密钥材料的注册表。当前阶段使用 FID+公钥绑定，下一阶段接入 RA-TLS 远程证明。
+- **按需加密分发 (On-Demand Encrypted Dispatch)**：服务器按实例绑定权限解析 secret reference，解密后再使用请求方实例公钥 ECIES 实时加密返回。
+- **静态数据加密 (Encryption at Rest)**：所有持久化敏感信息（服务凭证、OAuth 令牌等）均使用服务器主密钥加密。
 
 ### 4.2. 数据模型 (Database Schema)
 
-**以下数据模型直接采纳自原始 PD 设计**，用于支持上述核心职责。表名和字段名应严格按照此规范实现。
+> 说明：本节已按语义修正。`app_id` 表示 CVM/Agent 工作负载身份，不再表示外部服务（如 gmail app）。
 
-#### 4.2.1. `apps` (应用注册表)
-
-存储所有注册的第三方应用信息。
+#### 4.2.1. `apps` (工作负载应用)
 
 ```sql
--- 应用注册表，存储所有注册的第三方应用信息
 CREATE TABLE apps (
-    app_id VARCHAR(255) PRIMARY KEY,       -- 应用唯一标识 (e.g., 'gdrive-app-123')
-    name VARCHAR(255) NOT NULL,            -- 应用可读名称 (e.g., 'My Company Google Drive')
-    service_type VARCHAR(50) NOT NULL,     -- 服务类型: 'google', 'github', 'aws', etc.
-    credentials_encrypted BYTEA NOT NULL,  -- 使用服务器主密钥加密后的 credentials.json
-    required_scopes TEXT[] NOT NULL,       -- 应用请求的 OAuth 权限范围
-    created_by VARCHAR(255) NOT NULL,      -- 创建该应用的管理员 user_id
+    app_id TEXT PRIMARY KEY,                -- CVM/Agent app identity
+    owner_user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
-#### 4.2.2. `user_secrets` (用户授权凭证)
-
-存储人类用户对某个 App 的授权凭证，核心是加密的 `refresh_token`。
+#### 4.2.2. `user_secrets` (服务凭证)
 
 ```sql
--- 用户授权凭证表，存储用户对某个 App 的授权凭证
 CREATE TABLE user_secrets (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id VARCHAR(255) NOT NULL,         -- 授权用户的 ID
-    app_id VARCHAR(255) NOT NULL REFERENCES apps(app_id) ON DELETE CASCADE,
-    secret_encrypted BYTEA NOT NULL,         -- 使用服务器主密钥加密后的 Secret 对象 (包含 refresh_token 等)
-    granted_scopes TEXT[] NOT NULL,          -- 用户实际授予的权限范围
-    token_is_valid BOOLEAN NOT NULL DEFAULT TRUE, -- 该 refresh_token 是否仍然有效
+    app_id TEXT NOT NULL REFERENCES apps(app_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    service TEXT NOT NULL,                  -- e.g. gmail/github
+    slug TEXT NOT NULL,                     -- e.g. foo@example.com / work
+    secret_encrypted BYTEA NOT NULL,        -- encrypted JSON object
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(user_id, app_id)
+    PRIMARY KEY (app_id, user_id, service, slug)
 );
 ```
 
 #### 4.2.3. `tee_instances` (TEE 实例注册表)
 
-存储所有已注册的、被授权可以获取秘密的 TEE 实例及其公钥。
-
 ```sql
--- TEE 实例注册表，系统的核心信任锚点之一
 CREATE TABLE tee_instances (
-    fid VARCHAR(40) PRIMARY KEY,             -- TEE 实例的指纹 ID (SHA1 hash of public key)
-    public_key BYTEA NOT NULL UNIQUE,        -- TEE 实例的 X25519 公钥 (32 bytes)
-    bound_app_id VARCHAR(255) NOT NULL,      -- 绑定的应用 ID，决定了此 TEE 能获取哪个 App 的凭证
-    bound_user_id VARCHAR(255) NOT NULL,     -- 绑定的用户 ID，决定了使用哪个用户的授权凭证
-    label VARCHAR(255),                      -- 可读标签 (e.g., 'prod-agent-vm-1')
+    fid TEXT PRIMARY KEY,
+    public_key BYTEA NOT NULL UNIQUE,
+    bound_app_id TEXT NOT NULL REFERENCES apps(app_id),
+    bound_user_id TEXT NOT NULL,
+    label TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMPTZ,
-    FOREIGN KEY (bound_app_id, bound_user_id) REFERENCES user_secrets(app_id, user_id)
+
+    -- 预留：RA-TLS / attestation metadata（下一阶段启用）
+    attestation_mode TEXT,
+    tee_type TEXT,
+    mrtd BYTEA,
+    rtmr0 BYTEA,
+    rtmr1 BYTEA,
+    rtmr2 BYTEA,
+    rtmr3 BYTEA,
+    quote_hash BYTEA,
+    cert_fingerprint BYTEA,
+    verified_at TIMESTAMPTZ
 );
 ```
 
@@ -231,10 +228,10 @@ CREATE TABLE tee_instances (
 
 | Service (gRPC) | Method (RPC) | Path (REST) | 调用者 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `AppService` | `RegisterApp` | `POST /v1/apps` | 人类用户 (管理员) | 注册新的第三方 App，上传 `credentials.json`。 |
-| `CredentialService` | `GetAuthGateway` | `GET /v1/credentials/gateway/{app_id}` | 人类用户 (开发者) | 获取 OAuth 授权跳转地址，以完成对 App 的授权。 |
-| `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE 客户端** | **核心接口**。TEE 实例通过 FID 和其他证明材料，批量拉取其所需的所有加密后的凭证包。 |
-| `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / 运维脚本 | 注册一个新的 TEE 实例及其公钥，并将其绑定到特定的 App 和用户授权。 |
+| `AppService` | `RegisterApp` | `POST /v1/apps` | 人类用户 (管理员) | 注册工作负载应用（CVM/Agent app_id）。 |
+| `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | 人类用户 (管理员) | 写入某个 app/user 下的服务凭证（service+slug）。 |
+| `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE 客户端** | **核心接口**。TEE 实例基于绑定身份批量拉取其所需的加密凭证包。 |
+| `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / 运维脚本 | 注册 TEE 实例并绑定到目标 app/user。 |
 
 #### 核心 API 流程详解: `FetchSecrets`
 
@@ -246,12 +243,12 @@ CREATE TABLE tee_instances (
     }
     ```
 2.  **验证实例 (Instance Verification)**: 服务器通过 `fid` 在 `tee_instances` 表中查找记录。如果找不到，返回 404 Not Found。
-3.  **解析引用 (Reference Parsing)**: 服务器遍历 `secret_references` 列表，解析出每个引用对应的 `app_id`, `user_id` 等信息。
-4.  **权限检查 (Authorization)**: 验证该 `fid` 是否有权限访问其请求的每一个 `app_id` 和 `user_id`。这通过 `tee_instances` 表中的 `bound_app_id` 和 `bound_user_id` 来实现。
+3.  **解析引用 (Reference Parsing)**: 服务器遍历 `secret_references`，解析出 `service`, `slug`, `field_name`。
+4.  **权限检查 (Authorization)**: 先根据 `fid` 找到绑定身份 `(bound_app_id, bound_user_id)`；再在该身份命名空间下解析引用。
 5.  **批量获取与加密 (Batch Fetch & Encrypt)**:
-    a.  对于每一个合法的秘密引用，服务器从 `user_secrets` 表中获取对应的 `secret_encrypted`。
-    b.  用服务器主密钥在内存中解密该秘密，得到明文 `refresh_token`。
-    c.  使用 `fid` 对应的 `public_key`，通过 **ECIES 方案**将明文 `refresh_token` 加密。
+    a.  对每个合法引用，在 `user_secrets` 中按 `(app_id, user_id, service, slug)` 读取 `secret_encrypted`。
+    b.  用服务器主密钥解密得到明文 secret object，并提取 `field_name` 对应值。
+    c.  使用 `fid` 对应 `public_key` 通过 **ECIES** 加密后返回。
 6.  **返回加密包 (Response)**: 将所有加密后的秘密组织成一个 map 返回给客户端。
     ```json
     {
@@ -622,54 +619,51 @@ _The following is a direct and complete inclusion of the encryption specificatio
 - **不可变性**: 一旦镜像被构建和度量，`jingui` 客户端就成为该 TEE 环境不可变的一部分。任何对其的修改都会改变 TEE 的证明报告，导致远程证明失败。
 - **入口点**: TEE 镜像的启动脚本或容器的 `ENTRYPOINT` 应被配置为 `jingui run`，由它来启动真正的 AI Agent 应用。
 
-### 7.3. 当前实现状态（2026-02-24）
+### 7.3. 当前实现状态与纠偏决策（2026-02-24）
 
-> 本节用于同步“设计目标”和“代码现实”的差异，便于后续 roadmap 讨论。
+> 本节记录已达成共识的设计纠偏，作为后续重构基线。
 
-**已实现（代码已落地）**
-- 客户端：`jingui run`、`jingui read`、输出掩蔽（Aho-Corasick）、Linux/amd64 下 seccomp+ptrace lockdown。
-- 服务端：`/v1/secrets/challenge` + `/v1/secrets/fetch` 挑战应答流程；App/Instance 注册；OAuth gateway/callback；device flow；直接 PUT secrets。
-- 运维管理：新增 admin CRUD 查询/删除接口（apps / instances / user-secrets），支持 `cascade=true` 级联删除。
-- 工程化：CI、BDD、nightly、release、Docker multi-arch 构建与发布；端到端手工测试脚本 `scripts/manual-test.sh`。
+**问题确认**
+- 现实现把 `app_id` 误用为外部服务应用标识（如 gmail-app），与目标不一致。
+- 目标语义中，`app_id` 应属于 CVM/Agent 工作负载身份，并由 TEE 认证链（RA-TLS）提供。
 
-**未实现 / 待讨论（仍按 roadmap 推进）**
-- `jingui inject` CLI 命令。
-- gRPC 接口（当前为 REST 实现）。
-- PostgreSQL 支持、审计日志、KMS/远程证明自动注册全链路。
+**已确认的设计修正**
+- Secret reference 统一为：`jingui://<service>/<slug_or_email>/<field_name>`。
+- `app_id` 不再出现在 ref 中；ref 仅表示“服务命名空间 + 字段选择”。
+- `app_id` 作为 workload identity，在服务端权限边界中使用（由实例绑定与后续 attestation 共同确定）。
+
+**执行策略（一次到位）**
+1. 先做数据库与 CRUD 重构并跑通 server-client 主链路。
+2. migration 一步到位（无旧字段兼容、无 v2 API）。
+3. RA-TLS 作为 next phase 引入，但本阶段预留抽象与字段，避免下阶段 breaking change。
 
 ---
 
 ## 8. 实现路线图 (Roadmap)
 
-### 第一阶段 (MVP): 核心功能闭环
+### Phase 1（当前）：数据模型重构 + CRUD 先行
 
-- **目标**: 验证核心的秘密注入和输出掩蔽流程。
+- **目标**: 修正 `app_id` 语义并保持 server-client 主链路可测试。
 - **内容**:
-    - **客户端**: `jingui run` 的基本实现，包括解析秘密引用、从服务器获取加密秘密、使用 Go `crypto` 库解密、通过 `os/exec` 启动子进程并注入环境变量、通过 `io.Pipe` 实现基本的 `stdout`/`stderr` 重定向和过滤。
-    - **服务器**: 简化的 API 实现，支持 TEE 实例注册和秘密分发，使用内存或 SQLite 存储。
+  - 一次性 schema 重构（无兼容层、无 v2 API）。
+  - Secret reference 改为 `jingui://<service>/<slug>/<field>`。
+  - admin CRUD 与 fetch/read/run 按新语义联通。
 
-### 第二阶段 (Alpha): 安全机制与核心功能强化
+### Phase 2：RA-TLS 身份绑定接入
 
-- **目标**: 实现关键的进程隔离和 `inject` 功能。
+- **目标**: 将 workload identity 与 TEE 认证链绑定，替换纯 FID 信任。
 - **内容**:
-    - **客户端**: 
-        - 引入 `seccomp-bpf` 或 `ptrace` 机制，实现对子进程的系统调用过滤。
-        - 使用 Aho-Corasick 算法重构输出掩蔽逻辑。
-        - 实现 `jingui read` 和 `jingui inject` 命令。
-    - **服务器**: 
-        - 完整的 OAuth 2.0 授权网关。
-        - 引入 PostgreSQL 支持。
-        - 为人类管理员提供一个简单的 Web UI 来管理应用和凭证。
+  - 引入 RA-TLS 证书验证（依赖 dstack/go-ratls 与 dcap-qvl Go bindings）。
+  - 从 attestation 上下文解析 workload identity（app_id）并执行授权匹配。
+  - 保持 secret reference 语法不变，避免对客户端配置造成 breaking change。
 
-### 第三阶段 (Beta): 生产级可用性
+### Phase 3：生产化能力
 
-- **目标**: 使系统达到生产环境部署的标准。
+- **目标**: 在稳定身份模型基础上补齐运维与可靠性能力。
 - **内容**:
-    - **服务器**: 
-        - 完整的审计日志功能。
-        - 与 KMS 集成，实现全自动的远程证明和 TEE 实例注册。
-        - 高可用部署方案（多副本、负载均衡）。
-    - **文档**: 提供完整的部署、运维和 API 文档。
+  - 审计日志、PostgreSQL、HA 部署。
+  - KMS/远程证明自动注册链路。
+  - 文档与策略（轮换、失效、合规）完善。
 
 ---
 

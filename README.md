@@ -58,8 +58,8 @@ docker run -d \
 Create a `.env` file with secret references:
 
 ```env
-GMAIL_CLIENT_ID=jingui://gmail-app/user@example.com/client_id
-GMAIL_SECRET=jingui://gmail-app/user@example.com/client_secret
+GMAIL_TOKEN=jingui://gmail/user@example.com/token
+GMAIL_WORK_TOKEN=jingui://gmail/work/token
 DATABASE_URL=postgres://localhost/mydb
 ```
 
@@ -82,8 +82,15 @@ Lines with `jingui://` URIs are fetched and decrypted; plain values pass through
 ## Secret Reference Format
 
 ```
-jingui://<app_id>/<secret_name>/<field_name>
+jingui://<service>/<slug_or_email>/<field_name>
 ```
+
+Examples:
+
+- `jingui://gmail/foo@example.com/token`
+- `jingui://gmail/work/token`
+
+`app_id` is **not** encoded in secret references. In the target design, workload identity (`app_id`) comes from TEE attestation (RA-TLS), while the reference only selects a secret namespace inside that workload.
 
 ## Security Model
 
@@ -116,10 +123,10 @@ docker build --target client -t jingui .
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/v1/apps` | Register an OAuth app |
-| GET | `/v1/apps` | List apps (metadata only) |
-| GET | `/v1/apps/:app_id` | Get app metadata |
-| DELETE | `/v1/apps/:app_id` | Delete app (`?cascade=true` to delete dependent secrets/instances) |
+| POST | `/v1/apps` | Register a workload app (CVM/agent app identity) |
+| GET | `/v1/apps` | List workload apps (metadata only) |
+| GET | `/v1/apps/:app_id` | Get workload app metadata |
+| DELETE | `/v1/apps/:app_id` | Delete workload app (`?cascade=true` to delete dependent secrets/instances) |
 
 ### Instance management
 
@@ -158,6 +165,16 @@ docker build --target client -t jingui .
 
 - Full end-to-end script: `scripts/manual-test.sh`
 - Step-by-step guide: `docs/manual-test-guide.md`
+
+## Planned refactor (in progress)
+
+- Correct data model semantics:
+  - `app_id` is workload identity (CVM/agent app), not provider/service name.
+  - Secret references use `jingui://<service>/<slug>/<field>` and do not carry `app_id`.
+- Execution plan:
+  1. Refactor DB schema and CRUD first (single-step migration; no backward-compat layer).
+  2. Keep server-client flow working with challenge-response during refactor.
+  3. Introduce RA-TLS-based identity binding in next phase without changing ref syntax.
 
 ## License
 
