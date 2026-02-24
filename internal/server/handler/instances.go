@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 
 	"github.com/aspect-build/jingui/internal/server/db"
@@ -44,7 +45,18 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 		}
 
 		if err := store.RegisterInstance(inst); err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "instance already exists or DB error: " + err.Error()})
+			switch err {
+			case db.ErrInstanceDuplicateFID:
+				c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("instance with FID %s already exists", fid)})
+			case db.ErrInstanceDuplicateKey:
+				c.JSON(http.StatusConflict, gin.H{"error": "another instance with this public key already exists"})
+			case db.ErrInstanceAppUserNotFound:
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("app %q with authorized user %q not found; register the app and complete OAuth authorization first", req.BoundAppID, req.BoundUserID),
+				})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			}
 			return
 		}
 
