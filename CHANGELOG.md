@@ -1,3 +1,10 @@
+## v0.1.0 (2026-02-24)
+
+- refactor: start secret-ref migration to service/slug semantics
+- docs: align ref semantics with workload identity and add refactor plan
+- docs: sync API/PRD status and normalize changelog
+- Add end-to-end manual test script
+
 # Changelog
 
 ## Unreleased
