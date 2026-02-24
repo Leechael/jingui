@@ -13,7 +13,7 @@
 ## Phase 1 (now): schema + CRUD + server-client flow
 - [ ] Redesign schema around `(app_id, user_id, service, slug)` secret keyspace.
 - [ ] Update DB access layer (`apps`, `user_secrets`, `tee_instances`) to new semantics.
-- [ ] Update ref parser to `service/slug/field` naming.
+- [x] Update ref parser to `service/slug/field` naming (with temporary aliases for incremental refactor).
 - [ ] Update `fetch` authorization flow to use bound workload identity + parsed ref namespace.
 - [ ] Update admin CRUD handlers and validation/error messages.
 - [ ] Update integration tests / BDD fixtures to new reference format.
