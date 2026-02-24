@@ -112,12 +112,40 @@ docker build --target client -t jingui .
 
 **Admin endpoints** (require `Authorization: Bearer <ADMIN_TOKEN>`):
 
+### App management
+
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/v1/apps` | Register an OAuth app |
+| GET | `/v1/apps` | List apps (metadata only) |
+| GET | `/v1/apps/:app_id` | Get app metadata |
+| DELETE | `/v1/apps/:app_id` | Delete app (`?cascade=true` to delete dependent secrets/instances) |
+
+### Instance management
+
+| Method | Path | Description |
+|--------|------|-------------|
 | POST | `/v1/instances` | Register a TEE instance (public key + binding) |
+| GET | `/v1/instances` | List registered TEE instances |
+| GET | `/v1/instances/:fid` | Get instance details |
+| DELETE | `/v1/instances/:fid` | Delete an instance |
+
+### User-secret management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/user-secrets` | List user-secret metadata (supports `?app_id=` filter) |
+| GET | `/v1/user-secrets/:app_id/:user_id` | Get one user-secret metadata record |
+| DELETE | `/v1/user-secrets/:app_id/:user_id` | Delete user secret (`?cascade=true` deletes dependent instances) |
+
+### Credential APIs
+
+| Method | Path | Description |
+|--------|------|-------------|
 | PUT | `/v1/credentials/:app_id` | Store secrets directly |
 | GET | `/v1/credentials/gateway/:app_id` | Start OAuth authorization flow |
+| POST | `/v1/credentials/device/:app_id` | Start OAuth device flow |
+| GET | `/v1/credentials/callback` | OAuth callback endpoint |
 
 **Client endpoints**:
 
@@ -125,6 +153,11 @@ docker build --target client -t jingui .
 |--------|------|-------------|
 | POST | `/v1/secrets/challenge` | Request proof-of-possession challenge |
 | POST | `/v1/secrets/fetch` | Fetch encrypted secrets (after challenge) |
+
+## Manual verification
+
+- Full end-to-end script: `scripts/manual-test.sh`
+- Step-by-step guide: `docs/manual-test-guide.md`
 
 ## License
 

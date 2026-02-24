@@ -622,6 +622,21 @@ _The following is a direct and complete inclusion of the encryption specificatio
 - **不可变性**: 一旦镜像被构建和度量，`jingui` 客户端就成为该 TEE 环境不可变的一部分。任何对其的修改都会改变 TEE 的证明报告，导致远程证明失败。
 - **入口点**: TEE 镜像的启动脚本或容器的 `ENTRYPOINT` 应被配置为 `jingui run`，由它来启动真正的 AI Agent 应用。
 
+### 7.3. 当前实现状态（2026-02-24）
+
+> 本节用于同步“设计目标”和“代码现实”的差异，便于后续 roadmap 讨论。
+
+**已实现（代码已落地）**
+- 客户端：`jingui run`、`jingui read`、输出掩蔽（Aho-Corasick）、Linux/amd64 下 seccomp+ptrace lockdown。
+- 服务端：`/v1/secrets/challenge` + `/v1/secrets/fetch` 挑战应答流程；App/Instance 注册；OAuth gateway/callback；device flow；直接 PUT secrets。
+- 运维管理：新增 admin CRUD 查询/删除接口（apps / instances / user-secrets），支持 `cascade=true` 级联删除。
+- 工程化：CI、BDD、nightly、release、Docker multi-arch 构建与发布；端到端手工测试脚本 `scripts/manual-test.sh`。
+
+**未实现 / 待讨论（仍按 roadmap 推进）**
+- `jingui inject` CLI 命令。
+- gRPC 接口（当前为 REST 实现）。
+- PostgreSQL 支持、审计日志、KMS/远程证明自动注册全链路。
+
 ---
 
 ## 8. 实现路线图 (Roadmap)

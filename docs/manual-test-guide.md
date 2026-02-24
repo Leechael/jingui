@@ -3,6 +3,9 @@
 本指引将测试拆分为 **Server 端 (operator 机器)** 和 **Client 端 (TDX 环境)** 两部分。
 涉及的所有值（密钥、FID、公钥等）在执行过程中会动态生成，请随时记录并在后续步骤中替换。
 
+> 如果你要先做一轮本地快速全链路回归，优先运行：`scripts/manual-test.sh`。
+> 该脚本已覆盖 app / instance / user-secret 的新增 admin CRUD 检查与级联删除场景。
+
 ---
 
 ## 0. Build
@@ -463,6 +466,45 @@ curl -s -X POST "$SERVER/v1/secrets/fetch" \
 ```
 
 **预期**: HTTP 404 `{"error":"instance not found"}`
+
+---
+
+## Admin CRUD 补充检查（新增）
+
+### D1. 查询接口（apps / instances / user-secrets）
+
+```bash
+curl -s "$SERVER/v1/apps" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+curl -s "$SERVER/v1/instances" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+curl -s "$SERVER/v1/user-secrets" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+```
+
+**验证点 ✓**:
+- 都返回 200
+- `apps` 不泄露 `credentials_encrypted`
+- `user-secrets` 列表不泄露 `secret_encrypted`
+
+### D2. 非级联删除阻断
+
+```bash
+# 若 app 下仍有 user_secrets/instances，删除应失败
+curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+  "$SERVER/v1/apps/gmail-app" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**预期**: 409（有依赖记录）
+
+### D3. 级联删除
+
+```bash
+# 允许级联删除 app 及其依赖数据
+curl -s -X DELETE \
+  "$SERVER/v1/apps/gmail-app?cascade=true" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**预期**: 200，随后查询 apps / user-secrets / instances 对应记录已移除
 
 ---
 
