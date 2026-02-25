@@ -23,6 +23,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  JINGUI_DB_PATH      SQLite database path (default: jingui.db)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_LISTEN_ADDR  Listen address (default: :8080)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_BASE_URL     Public base URL for OAuth callbacks (default: http://localhost:<port>)\n")
+		fmt.Fprintf(os.Stderr, "  JINGUI_RATLS_STRICT Enforce strict RA-TLS mode for secret fetch flow (default: true)\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
 		flag.PrintDefaults()
 	}

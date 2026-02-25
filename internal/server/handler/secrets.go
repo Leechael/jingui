@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aspect-build/jingui/internal/attestation"
 	"github.com/aspect-build/jingui/internal/crypto"
 	"github.com/aspect-build/jingui/internal/refparser"
 	"github.com/aspect-build/jingui/internal/server/db"
@@ -21,12 +22,14 @@ import (
 const challengeTTL = 2 * time.Minute
 
 type issueChallengeRequest struct {
-	FID string `json:"fid" binding:"required"`
+	FID               string              `json:"fid" binding:"required"`
+	ClientAttestation *attestation.Bundle `json:"client_attestation,omitempty"`
 }
 
 type issueChallengeResponse struct {
-	ChallengeID string `json:"challenge_id"`
-	Challenge   string `json:"challenge"`
+	ChallengeID       string              `json:"challenge_id"`
+	Challenge         string              `json:"challenge"`
+	ServerAttestation *attestation.Bundle `json:"server_attestation,omitempty"`
 }
 
 type fetchSecretsRequest struct {
