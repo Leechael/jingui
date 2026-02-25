@@ -26,6 +26,8 @@
 - feat(server): add `GET /` -> `ok` and `GET /openapi.json`
 - docs: add `docs/openapi.json`
 - docs: document `PUT /v1/apps/:app_id` update path and `jingui read --show-meta`
+- docs: align README/PRD/manual guide with current `<app_id>/<user_id>/<field>` reference behavior
+- docs: refresh OpenAPI paths to match implemented router endpoints
 - chore: normalize changelog structure
 
 ## v0.0.3 (2026-02-13)

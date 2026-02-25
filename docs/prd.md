@@ -14,6 +14,17 @@ To preserve technical accuracy, this document directly includes key technical sp
 
 ---
 
+## Current Implementation Status (as of 2026-02-26)
+
+To avoid ambiguity between target design and shipped behavior, this snapshot is authoritative for the current codebase:
+
+- Secret reference format in runtime paths: `jingui://<app_id>/<user_id>/<field>`
+- `user_secrets` keyspace: `(app_id, user_id)`
+- `jingui inject` is planned, not implemented in current CLI
+- Challenge-response (`/v1/secrets/challenge` + `/v1/secrets/fetch`) is implemented and required for fetch
+
+The service/slug reference model and corresponding schema changes remain planned roadmap work.
+
 ## 1. Product Overview
 
 ### 1.1 Vision and Positioning
@@ -108,26 +119,27 @@ Although Jingui targets non-human AI agents, its UX model is inspired by **1Pass
 | `jingui run -- <cmd>` | `op run -- <cmd>` | **Core function**. Launch subprocess, inject fetched secrets as env vars, and redact subprocess stdout/stderr. |
 | `jingui read <secret_ref>` | `op read <secret_ref>` | Read a single secret and print it. Metadata hidden by default; `--show-meta` enables debug FID/Public Key output. |
 | `jingui status` | — | Print current instance info (FID/Public Key) and registration state for troubleshooting. |
-| `jingui inject` | `op inject` | Read template from stdin, replace secret references with real values, output rendered result to stdout. |
+| `jingui inject` | `op inject` | Planned command (not in current released CLI). |
 
 ### 3.2 Secret Reference Syntax
 
 Use URI-style references:
 
-`jingui://<service>/<slug_or_email>/<field_name>`
+`jingui://<app_id>/<user_id>/<field_name>`
 
 - `jingui://`: protocol prefix.
-- `<service>`: external service name (e.g. `gmail`, `github`).
-- `<slug_or_email>`: namespace within service (email/alias/workspace id).
-- `<field_name>`: field within secret object (`token`, `client_id`, etc).
+- `<app_id>`: app namespace (currently used as first path segment).
+- `<user_id>`: user namespace (typically authorized email).
+- `<field_name>`: field within secret object (`refresh_token`, `client_id`, etc).
 
-> Design rule: `app_id` must not appear in secret references. `app_id` is workload identity provided by TEE/RA-TLS chain.
+> Current implementation and tests use `<app_id>/<user_id>/<field>`. The service/slug format is a planned migration item.
 
 Examples:
 
 ```
-GMAIL_TOKEN="jingui://gmail/foo@example.com/token"
-GMAIL_WORK_TOKEN="jingui://gmail/work/token"
+GOG_CLIENT_ID="jingui://gmail-app/user@example.com/client_id"
+GOG_CLIENT_SECRET="jingui://gmail-app/user@example.com/client_secret"
+GOG_REFRESH_TOKEN="jingui://gmail-app/user@example.com/refresh_token"
 ```
 
 ### 3.3 `jingui run` Workflow and Security
@@ -166,7 +178,7 @@ Jingui Server is the central authority for credential authorization and distribu
 
 ### 4.2 Data Model (Database Schema)
 
-> Semantic correction: `app_id` represents workload identity (CVM/Agent), not external service application id.
+> This section is target-state design. Current implementation still uses `apps(app_id, service_type, required_scopes, credentials_encrypted)` and `user_secrets(app_id, user_id, secret_encrypted)`.
 
 #### 4.2.1 `apps` (workload applications)
 
@@ -238,7 +250,7 @@ The server should expose both gRPC and REST APIs.
    ```json
    {
      "fid": "...",
-     "secret_references": ["jingui://...", "jingui://..."]
+     "secret_references": ["jingui://gmail-app/user@example.com/client_id", "jingui://gmail-app/user@example.com/refresh_token"]
    }
    ```
 2. **Instance verification**: lookup `fid` in `tee_instances`; return 404 if not found.
@@ -252,8 +264,8 @@ The server should expose both gRPC and REST APIs.
    ```json
    {
      "secrets": {
-       "jingui://gdrive/user1/token": "<ECIES_encrypted_blob_1>",
-       "jingui://github/user1/token": "<ECIES_encrypted_blob_2>"
+       "jingui://gmail-app/user@example.com/client_id": "<ECIES_encrypted_blob_1>",
+       "jingui://gmail-app/user@example.com/refresh_token": "<ECIES_encrypted_blob_2>"
      }
    }
    ```
@@ -533,7 +545,7 @@ On top of the encryption protocol above, Jingui’s security posture depends on 
 #### Scenario 1: Successful Secret Usage
 
 - **Given** a TEE instance has valid `.appkeys.json` from attestation flow.
-- **And** server stores API key `sk_live_123456789` for reference `jingui://app/secret/key`.
+- **And** server stores a credential field for reference `jingui://gmail-app/user@example.com/refresh_token`.
 - **And** a Python script `agent.py` reads `API_KEY` and calls external API.
 - **When** launcher runs:
   ```bash
@@ -623,10 +635,10 @@ This section captures agreed baseline corrections.
 - Current implementation incorrectly treats `app_id` as external service app identifier (e.g. gmail-app).
 - Target semantics: `app_id` should represent CVM/Agent workload identity from TEE attestation chain.
 
-**Confirmed design changes**
-- Secret reference unified to: `jingui://<service>/<slug_or_email>/<field_name>`.
-- `app_id` removed from secret references.
-- `app_id` remains server-side authorization boundary (determined by instance binding and later attestation).
+**Planned design changes (not yet shipped)**
+- Secret reference migration target: `jingui://<service>/<slug_or_email>/<field_name>`.
+- Remove `app_id` from secret references.
+- Keep `app_id` as server-side authorization boundary (determined by instance binding and later attestation).
 
 **Execution strategy (single-step migration)**
 1. Refactor DB/schema/CRUD first and keep server-client primary flow operational.
