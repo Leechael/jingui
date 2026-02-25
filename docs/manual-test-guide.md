@@ -70,6 +70,8 @@ bin/jingui-server
 
 ### A3. 注册 App (上传 Google OAuth credentials.json)
 
+> 若返回 `app_id already exists`，请改用 `PUT /v1/apps/:app_id` 更新，而不是重复 `POST /v1/apps`。
+
 准备好你的 Google Cloud Console 下载的 `credentials.json`，内容形如：
 
 ```json
@@ -102,6 +104,22 @@ curl -s -X POST "$SERVER/v1/apps" \
 ```
 
 **验证点 ✓**: HTTP 201, status = "created"
+
+如需更新已有 app：
+
+```bash
+curl -s -X PUT "$SERVER/v1/apps/gmail-app" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d "$(jq -n \
+    --arg app_id "gmail-app" \
+    --arg name "Gmail App" \
+    --arg service_type "gmail" \
+    --arg scopes "https://mail.google.com/" \
+    --argjson creds "$(cat credentials.json)" \
+    '{app_id:$app_id, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
+  )"
+```
 
 ### A4. OAuth 授权 (获取 refresh_token)
 
@@ -296,7 +314,18 @@ cd /opt/jingui
   "jingui://gmail-app/user@example.com/client_id"
 ```
 
-**预期**: stderr 输出 FID / Public Key 信息，stdout 输出真实的 client_id 值（如 `xxx.apps.googleusercontent.com`）。
+**预期**: 默认仅 stdout 输出真实的 client_id 值（如 `xxx.apps.googleusercontent.com`）。
+
+如需显示调试元信息（FID/Public Key）：
+
+```bash
+./jingui read \
+  --show-meta \
+  --server "http://<SERVER_IP>:8080" \
+  --appkeys .appkeys.json \
+  --insecure \
+  "jingui://gmail-app/user@example.com/client_id"
+```
 
 **验证点 ✓**: 输出与 credentials.json 中的 `client_id` 一致
 

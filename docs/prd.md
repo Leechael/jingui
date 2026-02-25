@@ -107,7 +107,8 @@
 | 命令 | 对标 1Password 命令 | 作用 |
 | :--- | :--- | :--- |
 | `jingui run -- <cmd>` | `op run -- <cmd>` | **核心功能**。启动一个子进程，并将从服务器获取的秘密作为环境变量注入其中。同时，自动掩蔽子进程的 stdout/stderr 输出。 |
-| `jingui read <secret_ref>` | `op read <secret_ref>` | 从服务器读取单个秘密的值并打印到标准输出。主要用于调试或需要将秘密值通过管道传递给其他工具的场景。 |
+| `jingui read <secret_ref>` | `op read <secret_ref>` | 从服务器读取单个秘密值并打印到 stdout。默认不打印实例元信息；调试时可通过 `--show-meta` 输出 FID/Public Key。 |
+| `jingui status` | — | 打印当前实例（FID/Public Key）与 server 注册状态，用于排障与上线前检查。 |
 | `jingui inject` | `op inject` | 读取一个模板文件 (stdin)，将其中的秘密引用替换为真实的秘密值，然后将结果输出到 stdout。 |
 
 ### 3.2. 秘密引用格式 (Secret Reference Syntax)
@@ -229,6 +230,7 @@ CREATE TABLE tee_instances (
 | Service (gRPC) | Method (RPC) | Path (REST) | 调用者 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `AppService` | `RegisterApp` | `POST /v1/apps` | 人类用户 (管理员) | 注册工作负载应用（CVM/Agent app_id）。 |
+| `AppService` | `UpdateApp` | `PUT /v1/apps/{app_id}` | 人类用户 (管理员) | 更新已存在 app 的 metadata/credentials。 |
 | `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | 人类用户 (管理员) | 写入某个 app/user 下的服务凭证（service+slug）。 |
 | `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE 客户端** | **核心接口**。TEE 实例基于绑定身份批量拉取其所需的加密凭证包。 |
 | `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / 运维脚本 | 注册 TEE 实例并绑定到目标 app/user。 |

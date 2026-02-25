@@ -75,6 +75,13 @@ Check local instance status and registration:
 jingui status --server https://jingui.example.com
 ```
 
+Read one secret (metadata is hidden by default):
+
+```bash
+jingui read --server https://jingui.example.com 'jingui://gmail/work/token'
+# use --show-meta to print FID/Public Key to stderr for debugging
+```
+
 Lines with `jingui://` URIs are fetched and decrypted; plain values pass through unchanged.
 
 | Flag | Default | Description |
@@ -84,6 +91,8 @@ Lines with `jingui://` URIs are fetched and decrypted; plain values pass through
 | `--env-file` | `.env` | Environment file with secret refs |
 | `--insecure` | `false` | Allow plaintext HTTP |
 | `--no-lockdown` | `false` | Disable seccomp hardening |
+
+`jingui read` also supports `--show-meta` to print FID/Public Key to stderr when debugging.
 
 ## Secret Reference Format
 
@@ -132,6 +141,7 @@ docker build --target client -t jingui .
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/v1/apps` | Register a workload app (CVM/agent app identity) |
+| PUT | `/v1/apps/:app_id` | Update app metadata/credentials |
 | GET | `/v1/apps` | List workload apps (metadata only) |
 | GET | `/v1/apps/:app_id` | Get workload app metadata |
 | DELETE | `/v1/apps/:app_id` | Delete workload app (`?cascade=true` to delete dependent secrets/instances) |

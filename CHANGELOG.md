@@ -25,6 +25,7 @@
 - feat(server): tag requests with command type and enforce read policy
 - feat(server): add `GET /` -> `ok` and `GET /openapi.json`
 - docs: add `docs/openapi.json`
+- docs: document `PUT /v1/apps/:app_id` update path and `jingui read --show-meta`
 - chore: normalize changelog structure
 
 ## v0.0.3 (2026-02-13)
