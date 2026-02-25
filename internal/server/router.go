@@ -21,6 +21,7 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 	{
 		// Admin-authenticated management endpoints
 		v1.POST("/apps", admin, handler.HandleCreateApp(store, cfg.MasterKey))
+		v1.PUT("/apps/:app_id", admin, handler.HandleUpdateApp(store, cfg.MasterKey))
 		v1.GET("/apps", admin, handler.HandleListApps(store))
 		v1.GET("/apps/:app_id", admin, handler.HandleGetApp(store))
 		v1.DELETE("/apps/:app_id", admin, handler.HandleDeleteApp(store))

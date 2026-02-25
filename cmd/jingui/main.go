@@ -101,6 +101,7 @@ func newReadCmd() *cobra.Command {
 		serverURL   string
 		appkeysPath string
 		insecure    bool
+		showMeta    bool
 	)
 
 	cmd := &cobra.Command{
@@ -114,13 +115,14 @@ Prints the plaintext value to stdout. Useful for verifying connectivity.`,
 			if err != nil {
 				return err
 			}
-			return readSecret(resolved, appkeysPath, insecure, args[0])
+			return readSecret(resolved, appkeysPath, insecure, showMeta, args[0])
 		},
 	}
 
 	cmd.Flags().StringVar(&serverURL, "server", "", "Jingui server URL (or set JINGUI_SERVER_URL)")
 	cmd.Flags().StringVar(&appkeysPath, "appkeys", defaultAppkeysPath, "Path to appkeys file")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Allow plaintext HTTP connection to server")
+	cmd.Flags().BoolVar(&showMeta, "show-meta", false, "Print FID/Public Key to stderr for debugging")
 
 	return cmd
 }
@@ -297,7 +299,7 @@ func showStatus(serverURL, appkeysPath string, insecure bool) error {
 	return nil
 }
 
-func readSecret(serverURL, appkeysPath string, insecure bool, secretRef string) error {
+func readSecret(serverURL, appkeysPath string, insecure, showMeta bool, secretRef string) error {
 	if _, err := refparser.Parse(secretRef); err != nil {
 		return fmt.Errorf("invalid secret reference: %w", err)
 	}
@@ -312,9 +314,11 @@ func readSecret(serverURL, appkeysPath string, insecure bool, secretRef string) 
 		return fmt.Errorf("compute FID: %w", err)
 	}
 
-	pub, _ := curve25519.X25519(privKey[:], curve25519.Basepoint)
-	fmt.Fprintf(os.Stderr, "FID: %s\n", fid)
-	fmt.Fprintf(os.Stderr, "Public Key: %s\n", hex.EncodeToString(pub))
+	if showMeta {
+		pub, _ := curve25519.X25519(privKey[:], curve25519.Basepoint)
+		fmt.Fprintf(os.Stderr, "FID: %s\n", fid)
+		fmt.Fprintf(os.Stderr, "Public Key: %s\n", hex.EncodeToString(pub))
+	}
 
 	blobs, err := client.Fetch(serverURL, privKey, fid, []string{secretRef}, insecure, "read")
 	if err != nil {

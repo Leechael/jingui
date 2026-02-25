@@ -9,6 +9,11 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
+// Sentinel errors for app operations.
+var (
+	ErrAppDuplicate = errors.New("app already exists")
+)
+
 // CreateApp inserts a new app into the database.
 func (s *Store) CreateApp(app *App) error {
 	_, err := s.db.Exec(
@@ -17,6 +22,10 @@ func (s *Store) CreateApp(app *App) error {
 		app.AppID, app.Name, app.ServiceType, app.RequiredScopes, app.CredentialsEncrypted,
 	)
 	if err != nil {
+		var sqliteErr *sqlite.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY {
+			return ErrAppDuplicate
+		}
 		return fmt.Errorf("insert app: %w", err)
 	}
 	return nil
@@ -36,6 +45,22 @@ func (s *Store) GetApp(appID string) (*App, error) {
 		return nil, fmt.Errorf("get app: %w", err)
 	}
 	return app, nil
+}
+
+// UpdateApp updates app metadata and encrypted credentials.
+// Returns true if an existing row was updated.
+func (s *Store) UpdateApp(app *App) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE apps
+		 SET name = ?, service_type = ?, required_scopes = ?, credentials_encrypted = ?
+		 WHERE app_id = ?`,
+		app.Name, app.ServiceType, app.RequiredScopes, app.CredentialsEncrypted, app.AppID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("update app: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // ListApps returns all registered apps.
