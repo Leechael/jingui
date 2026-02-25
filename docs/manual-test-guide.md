@@ -1,88 +1,89 @@
 # Jingui Manual Test Guide
 
-本指引将测试拆分为 **Server 端 (operator 机器)** 和 **Client 端 (TDX 环境)** 两部分。
-涉及的所有值（密钥、FID、公钥等）在执行过程中会动态生成，请随时记录并在后续步骤中替换。
+This guide splits testing into two parts: **Server side (operator machine)** and **Client side (TDX environment)**.
+Values such as keys, FID, and public key are generated dynamically during execution. Record them and reuse them in later steps.
 
-> 如果你要先做一轮本地快速全链路回归，优先运行：`scripts/manual-test.sh`。
-> 该脚本已覆盖 app / instance / user-secret 的新增 admin CRUD 检查与级联删除场景。
+> If you want a quick local end-to-end regression first, run: `scripts/manual-test.sh`.
+> The script already covers app / instance / user-secret admin CRUD checks and cascade-delete scenarios.
 >
-> ⚠️ 设计已确认将重构为 `jingui://<service>/<slug>/<field>` 语义，`app_id` 不再出现在 ref 中。
-> 本文部分示例仍使用旧格式，待 schema/handler 重构完成后会统一替换。
+> ⚠️ The design has been confirmed to move to `jingui://<service>/<slug>/<field>` semantics.
+> `app_id` will no longer appear in secret references.
+> Some examples below still use the old format and will be updated after schema/handler refactor is complete.
 
 ---
 
 ## 0. Build
 
-在开发机上：
+On your development machine:
 
 ```bash
-# 确认版本
+# Verify versions
 make clean build
 bin/jingui --version        # → jingui dev (commit=..., go=..., darwin/arm64)
 bin/jingui-server -v        # → jingui-server dev (commit=..., go=..., darwin/arm64)
 
-# 交叉编译 TDX 用的 linux/amd64 client
+# Cross-compile linux/amd64 client for TDX
 make build-client-linux-amd64
 file bin/linux-amd64/jingui  # → ELF 64-bit LSB executable, x86-64 ...
 
-# 交叉编译 linux/amd64 server（如果 server 也跑在 linux 上）
+# Cross-compile linux/amd64 server (if server runs on Linux)
 make build-server-linux-amd64
 ```
 
-产物路径：
+Artifacts:
 
-| 目标 | 路径 |
+| Target | Path |
 |------|------|
-| 当前平台 client | `bin/jingui` |
-| 当前平台 server | `bin/jingui-server` |
+| Current platform client | `bin/jingui` |
+| Current platform server | `bin/jingui-server` |
 | linux/amd64 client | `bin/linux-amd64/jingui` |
 | linux/amd64 server | `bin/linux-amd64/jingui-server` |
 
 ---
 
-## Part A — Server 端操作 (Operator)
+## Part A — Server-side Operations (Operator)
 
-### A1. 生成 Master Key 和 Admin Token
+### A1. Generate Master Key and Admin Token
 
 ```bash
 export JINGUI_MASTER_KEY=$(openssl rand -hex 32)
-echo "Master Key: $JINGUI_MASTER_KEY"   # 记录下来，后续启动 server 需要
+echo "Master Key: $JINGUI_MASTER_KEY"   # Save this; required when starting server
 
 export JINGUI_ADMIN_TOKEN=$(openssl rand -hex 16)
-echo "Admin Token: $JINGUI_ADMIN_TOKEN"  # 记录下来，管理 API 需要
+echo "Admin Token: $JINGUI_ADMIN_TOKEN"  # Save this; required for admin APIs
 ```
 
-### A2. 启动 Server
+### A2. Start the Server
 
 ```bash
-export JINGUI_MASTER_KEY="<上一步的值>"
-export JINGUI_ADMIN_TOKEN="<上一步的值>"
+export JINGUI_MASTER_KEY="<value from previous step>"
+export JINGUI_ADMIN_TOKEN="<value from previous step>"
 export JINGUI_DB_PATH="./jingui-test.db"
 export JINGUI_LISTEN_ADDR=":8080"
-export JINGUI_BASE_URL="http://<SERVER_IP>:8080"   # TDX 能访问到的地址
+export JINGUI_BASE_URL="http://<SERVER_IP>:8080"   # Must be reachable from TDX
 
 bin/jingui-server
-# 输出: jingui-server listening on :8080
+# Output: jingui-server listening on :8080
 ```
 
-> 如果 server 也在 linux 上跑，用 `bin/linux-amd64/jingui-server`。
-> 注意：如果 `JINGUI_BASE_URL` 不是 HTTPS，server 会输出警告。测试环境可忽略。
+> If server runs on Linux, use `bin/linux-amd64/jingui-server`.
+> Note: if `JINGUI_BASE_URL` is not HTTPS, server prints a warning. This is acceptable in test environments.
 
-### A3. 注册 App (上传 Google OAuth credentials.json)
+### A3. Register App (Upload Google OAuth `credentials.json`)
 
-> 若返回 `app_id already exists`，请改用 `PUT /v1/apps/:app_id` 更新，而不是重复 `POST /v1/apps`。
+> If you get `app_id already exists`, use `PUT /v1/apps/:app_id` to update instead of repeating `POST /v1/apps`.
 
-准备好你的 Google Cloud Console 下载的 `credentials.json`，内容形如：
+Prepare your downloaded Google Cloud Console `credentials.json`, for example:
 
 ```json
 {"installed":{"client_id":"xxx.apps.googleusercontent.com","client_secret":"GOCSPX-xxx","redirect_uris":["http://localhost"]}}
 ```
 
-注册：
+Register:
 
 ```bash
 SERVER="http://<SERVER_IP>:8080"
-ADMIN_TOKEN="<A1 中生成的 Admin Token>"
+ADMIN_TOKEN="<Admin Token generated in A1>"
 
 curl -s -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
@@ -97,15 +98,15 @@ curl -s -X POST "$SERVER/v1/apps" \
   )"
 ```
 
-**预期响应：**
+**Expected response:**
 
 ```json
 {"app_id":"gmail-app","status":"created"}
 ```
 
-**验证点 ✓**: HTTP 201, status = "created"
+**Check ✓**: HTTP 201, status = `created`
 
-如需更新已有 app：
+Update an existing app:
 
 ```bash
 curl -s -X PUT "$SERVER/v1/apps/gmail-app" \
@@ -121,85 +122,85 @@ curl -s -X PUT "$SERVER/v1/apps/gmail-app" \
   )"
 ```
 
-### A4. OAuth 授权 (获取 refresh_token)
+### A4. OAuth Authorization (Get `refresh_token`)
 
-OAuth gateway 需要 admin token。在浏览器中无法直接传 header，用 curl 获取重定向 URL：
+OAuth gateway requires admin token. In browser flows you cannot directly set headers, so use curl to get the redirect URL:
 
 ```bash
 curl -s -v "$SERVER/v1/credentials/gateway/gmail-app" \
   -H "Authorization: Bearer $ADMIN_TOKEN" 2>&1 | grep -i location
 ```
 
-复制 `Location:` 后面的 Google OAuth URL 到浏览器中打开。
+Copy the `Location:` Google OAuth URL to your browser.
 
-或者，如果 server 在本地，可以直接用浏览器访问（但需要另一种方式传 token）。简便做法是临时用 curl 跟随重定向：
+Or, if server is local, inspect response headers directly:
 
 ```bash
-# 这会输出 Google 登录 URL，复制到浏览器
+# This prints the Google login URL; copy it to your browser
 curl -s -D - "$SERVER/v1/credentials/gateway/gmail-app" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | head -20
 ```
 
-流程：
-1. 浏览器重定向到 Google 登录页
-2. 选择 Google 账号并授权
-3. 回调到 `/v1/credentials/callback`
-4. 页面显示 JSON 结果
+Flow:
+1. Browser redirects to Google login page
+2. Select account and grant permission
+3. Callback goes to `/v1/credentials/callback`
+4. Page displays JSON result
 
-**预期响应：**
+**Expected response:**
 
 ```json
 {"status":"authorized","app_id":"gmail-app","email":"user@example.com"}
 ```
 
-**验证点 ✓**: status = "authorized"，email 是你授权的 Google 账号
+**Check ✓**: `status = authorized`, `email` matches the authorized Google account
 
-> **记录 email**: 后续注册 TEE instance 时 `bound_user_id` 必须与此一致。
+> **Record the email**: `bound_user_id` in TEE instance registration must match this value.
 
-### A5. (暂停) 等待 Client 端生成密钥
+### A5. (Pause) Wait for Client-Side Key Generation
 
-继续 Part B 在 TDX 里生成密钥，拿到 **public_key** 后再回来完成 A6。
+Continue with Part B in TDX to generate keys, then come back with the **public_key** for A6.
 
 ---
 
-## Part B — Client 端操作 (TDX 环境)
+## Part B — Client-side Operations (TDX)
 
-### B1. 拷贝文件到 TDX
+### B1. Copy Files to TDX
 
-需要传入 TDX 的文件：
+Required file:
 
 ```
-bin/linux-amd64/jingui     # client 二进制
+bin/linux-amd64/jingui     # client binary
 ```
 
 ```bash
-# 示例：scp 到 TDX 实例
+# Example: scp to TDX instance
 scp bin/linux-amd64/jingui  tdx-host:/opt/jingui/jingui
 
-# 在 TDX 里给执行权限
+# Make executable inside TDX
 ssh tdx-host 'chmod +x /opt/jingui/jingui'
 ```
 
-### B2. 验证二进制
+### B2. Verify Binary
 
 ```bash
-# 在 TDX 内
+# Inside TDX
 /opt/jingui/jingui --version
 # → jingui dev (commit=..., go=..., linux/amd64)
 
 /opt/jingui/jingui --help
 ```
 
-**验证点 ✓**: 版本输出 `linux/amd64`
+**Check ✓**: version output shows `linux/amd64`
 
-### B3. 生成密钥 (.appkeys.json)
+### B3. Generate Key Pair (`.appkeys.json`)
 
 ```bash
 cd /opt/jingui
 ./jingui init -o .appkeys.json
 ```
 
-输出示例：
+Example output:
 
 ```
 Wrote .appkeys.json
@@ -213,29 +214,29 @@ Use the public key to register this instance:
     -d '{"public_key":"7a8b3c...","bound_app_id":"<APP_ID>","bound_user_id":"<EMAIL>"}'
 ```
 
-**记录下来：**
+**Record:**
 - `Public Key`: **____________________________**
 - `FID`: **____________________________**
 
-> `.appkeys.json` 包含私钥，权限已设为 0600，不要传出 TDX。
+> `.appkeys.json` contains private key material and is set to permission `0600`. Do not copy it out of TDX.
 
-### B4. (暂停) 回到 Server 端完成注册
+### B4. (Pause) Return to Server Side for Registration
 
-把上面的 **Public Key** 给到 operator，继续 Part A 的 A6。
+Send the **Public Key** to operator and continue Part A at A6.
 
 ---
 
-## Part A (续) — 注册 TEE Instance
+## Part A (continued) — Register TEE Instance
 
-### A6. 注册 TEE Instance
+### A6. Register TEE Instance
 
-用 TDX 里生成的 public_key 和 A4 中 OAuth 授权的 email：
+Use the TDX-generated public key and the OAuth email from A4:
 
 ```bash
 SERVER="http://<SERVER_IP>:8080"
-ADMIN_TOKEN="<A1 中生成的 Admin Token>"
-PUBLIC_KEY="<B3 中获得的 Public Key>"
-EMAIL="<A4 中授权的 email>"
+ADMIN_TOKEN="<Admin Token generated in A1>"
+PUBLIC_KEY="<Public Key from B3>"
+EMAIL="<Authorized email from A4>"
 
 curl -s -X POST "$SERVER/v1/instances" \
   -H 'Content-Type: application/json' \
@@ -249,20 +250,20 @@ curl -s -X POST "$SERVER/v1/instances" \
   )"
 ```
 
-**预期响应：**
+**Expected response:**
 
 ```json
 {"fid":"2f4e9d...","status":"registered"}
 ```
 
-**验证点 ✓**:
+**Check ✓**:
 - HTTP 201
-- 返回的 `fid` 应与 B3 中 `jingui init` 输出的 FID 一致
+- Returned `fid` matches the FID output from B3 `jingui init`
 
-### A7. 直接 curl 测试 secrets/fetch (可选)
+### A7. Direct `secrets/fetch` Test with curl (Optional)
 
 ```bash
-FID="<B3 的 FID>"
+FID="<FID from B3>"
 
 curl -s -X POST "$SERVER/v1/secrets/fetch" \
   -H 'Content-Type: application/json' \
@@ -272,7 +273,7 @@ curl -s -X POST "$SERVER/v1/secrets/fetch" \
   )" | jq .
 ```
 
-**预期响应：**
+**Expected response:**
 
 ```json
 {
@@ -284,13 +285,13 @@ curl -s -X POST "$SERVER/v1/secrets/fetch" \
 }
 ```
 
-**验证点 ✓**: 3 个 key 全部返回，值为 base64 编码的 ECIES 密文
+**Check ✓**: all 3 keys are returned, each value is a base64-encoded ECIES ciphertext.
 
 ---
 
-## Part B (续) — Client 端完整测试
+## Part B (continued) — Full Client-Side Tests
 
-### B5. 准备 .env 文件
+### B5. Prepare `.env`
 
 ```bash
 cat > /opt/jingui/.env << 'EOF'
@@ -301,9 +302,9 @@ GOG_REFRESH_TOKEN=jingui://gmail-app/user@example.com/refresh_token
 EOF
 ```
 
-> 把 `user@example.com` 替换为 A4 中实际授权的 email。
+> Replace `user@example.com` with the actual authorized email from A4.
 
-### B6. Test 1 — `jingui read` 读取单个 secret
+### B6. Test 1 — `jingui read` Single Secret
 
 ```bash
 cd /opt/jingui
@@ -314,9 +315,9 @@ cd /opt/jingui
   "jingui://gmail-app/user@example.com/client_id"
 ```
 
-**预期**: 默认仅 stdout 输出真实的 client_id 值（如 `xxx.apps.googleusercontent.com`）。
+**Expected**: by default prints only the real `client_id` value to stdout (e.g., `xxx.apps.googleusercontent.com`).
 
-如需显示调试元信息（FID/Public Key）：
+To display debug metadata (FID/Public Key):
 
 ```bash
 ./jingui read \
@@ -327,9 +328,9 @@ cd /opt/jingui
   "jingui://gmail-app/user@example.com/client_id"
 ```
 
-**验证点 ✓**: 输出与 credentials.json 中的 `client_id` 一致
+**Check ✓**: output matches `client_id` in `credentials.json`.
 
-### B7. Test 2 — stdout 掩蔽
+### B7. Test 2 — stdout Redaction
 
 ```bash
 ./jingui run \
@@ -340,15 +341,15 @@ cd /opt/jingui
   -- /bin/sh -c 'echo $GOG_CLIENT_ID'
 ```
 
-**预期输出：**
+**Expected output:**
 
 ```
 [REDACTED_BY_JINGUI]
 ```
 
-**验证点 ✓**: 真实的 client_id 值不出现在 stdout
+**Check ✓**: real `client_id` does not appear on stdout.
 
-### B8. Test 3 — stderr 掩蔽
+### B8. Test 3 — stderr Redaction
 
 ```bash
 ./jingui run \
@@ -359,15 +360,15 @@ cd /opt/jingui
   -- /bin/sh -c 'echo $GOG_CLIENT_SECRET >&2'
 ```
 
-**预期 stderr 输出：**
+**Expected stderr output:**
 
 ```
 [REDACTED_BY_JINGUI]
 ```
 
-**验证点 ✓**: 真实的 client_secret 值不出现在 stderr
+**Check ✓**: real `client_secret` does not appear on stderr.
 
-### B9. Test 4 — 多个 secret 同时掩蔽
+### B9. Test 4 — Redact Multiple Secrets in One Line
 
 ```bash
 ./jingui run \
@@ -378,15 +379,15 @@ cd /opt/jingui
   -- /bin/sh -c 'echo "id=$GOG_CLIENT_ID secret=$GOG_CLIENT_SECRET token=$GOG_REFRESH_TOKEN"'
 ```
 
-**预期输出：**
+**Expected output:**
 
 ```
 id=[REDACTED_BY_JINGUI] secret=[REDACTED_BY_JINGUI] token=[REDACTED_BY_JINGUI]
 ```
 
-**验证点 ✓**: 三个值全部被掩蔽
+**Check ✓**: all three values are redacted.
 
-### B10. Test 5 — 普通环境变量不受影响
+### B10. Test 5 — Normal Environment Variables Unchanged
 
 ```bash
 ./jingui run \
@@ -397,15 +398,15 @@ id=[REDACTED_BY_JINGUI] secret=[REDACTED_BY_JINGUI] token=[REDACTED_BY_JINGUI]
   -- /bin/sh -c 'echo "account=$GOG_ACCOUNT"'
 ```
 
-**预期输出：**
+**Expected output:**
 
 ```
 account=user@example.com
 ```
 
-**验证点 ✓**: 非 jingui:// 的普通值正常传递，不被掩蔽
+**Check ✓**: non-`jingui://` values pass through as-is and are not redacted.
 
-### B11. Test 6 — 子进程退出码传递
+### B11. Test 6 — Child Exit Code Propagation
 
 ```bash
 ./jingui run \
@@ -417,15 +418,15 @@ account=user@example.com
 echo "exit code: $?"
 ```
 
-**预期输出：**
+**Expected output:**
 
 ```
 exit code: 42
 ```
 
-**验证点 ✓**: 子进程退出码正确传递
+**Check ✓**: child process exit code is propagated correctly.
 
-### B12. Test 7 — 与 gogcli 集成 (最终验证)
+### B12. Test 7 — Integration with gogcli (Final Validation)
 
 ```bash
 ./jingui run \
@@ -436,40 +437,40 @@ exit code: 42
   -- gogcli gmail messages list
 ```
 
-**验证点 ✓**:
-- gogcli 正常工作（列出 Gmail 消息）
-- stdout/stderr 中不出现任何真实的 client_id / client_secret / refresh_token
+**Check ✓**:
+- gogcli works normally (lists Gmail messages)
+- no real `client_id` / `client_secret` / `refresh_token` is leaked in stdout/stderr
 
 ---
 
-## 认证与访问控制测试 (Server 端)
+## Authentication and Access Control Tests (Server Side)
 
-### C0. Admin Token 认证
+### C0. Admin Token Authentication
 
 ```bash
-# 无 token → 401
+# No token → 401
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
   -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
-# 预期: 401
+# Expected: 401
 
-# 错误 token → 401
+# Wrong token → 401
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer wrong-token' \
   -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
-# 预期: 401
+# Expected: 401
 
-# secrets/fetch 不需要 admin token（给 TEE 调用）
+# secrets/fetch does not require admin token (for TEE callers)
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/fetch" \
   -H 'Content-Type: application/json' \
   -d '{"fid":"nonexistent","secret_references":[]}'
-# 预期: 非 401 (应为 404)
+# Expected: not 401 (should be 404)
 ```
 
-**验证点 ✓**: 管理 API (apps, instances, gateway) 需要正确的 Bearer token；secrets/fetch 不需要
+**Check ✓**: admin APIs (apps, instances, gateway) require correct Bearer token; `secrets/fetch` does not.
 
-### C1. 错误的 app_id
+### C1. Wrong `app_id`
 
 ```bash
 curl -s -X POST "$SERVER/v1/secrets/fetch" \
@@ -477,9 +478,9 @@ curl -s -X POST "$SERVER/v1/secrets/fetch" \
   -d '{"fid":"'"$FID"'","secret_references":["jingui://wrong-app/user@example.com/client_id"]}'
 ```
 
-**预期**: HTTP 403 `{"error":"app_id mismatch ..."}`
+**Expected**: HTTP 403 `{"error":"app_id mismatch ..."}`
 
-### C2. 错误的 user_id
+### C2. Wrong `user_id`
 
 ```bash
 curl -s -X POST "$SERVER/v1/secrets/fetch" \
@@ -487,9 +488,9 @@ curl -s -X POST "$SERVER/v1/secrets/fetch" \
   -d '{"fid":"'"$FID"'","secret_references":["jingui://gmail-app/wrong@example.com/client_id"]}'
 ```
 
-**预期**: HTTP 403 `{"error":"user_id mismatch ..."}`
+**Expected**: HTTP 403 `{"error":"user_id mismatch ..."}`
 
-### C3. 不存在的 FID
+### C3. Non-existent FID
 
 ```bash
 curl -s -X POST "$SERVER/v1/secrets/fetch" \
@@ -497,13 +498,13 @@ curl -s -X POST "$SERVER/v1/secrets/fetch" \
   -d '{"fid":"0000000000000000000000000000000000000000","secret_references":["jingui://gmail-app/user@example.com/client_id"]}'
 ```
 
-**预期**: HTTP 404 `{"error":"instance not found"}`
+**Expected**: HTTP 404 `{"error":"instance not found"}`
 
 ---
 
-## Admin CRUD 补充检查（新增）
+## Admin CRUD Supplemental Checks (New)
 
-### D1. 查询接口（apps / instances / user-secrets）
+### D1. Query Endpoints (apps / instances / user-secrets)
 
 ```bash
 curl -s "$SERVER/v1/apps" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
@@ -511,54 +512,54 @@ curl -s "$SERVER/v1/instances" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 curl -s "$SERVER/v1/user-secrets" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 ```
 
-**验证点 ✓**:
-- 都返回 200
-- `apps` 不泄露 `credentials_encrypted`
-- `user-secrets` 列表不泄露 `secret_encrypted`
+**Check ✓**:
+- all return 200
+- `apps` does not leak `credentials_encrypted`
+- `user-secrets` list does not leak `secret_encrypted`
 
-### D2. 非级联删除阻断
+### D2. Non-cascade Delete Should Be Blocked
 
 ```bash
-# 若 app 下仍有 user_secrets/instances，删除应失败
+# If user_secrets/instances still exist under app, delete should fail
 curl -s -o /dev/null -w "%{http_code}" -X DELETE \
   "$SERVER/v1/apps/gmail-app" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**预期**: 409（有依赖记录）
+**Expected**: 409 (dependent records exist)
 
-### D3. 级联删除
+### D3. Cascade Delete
 
 ```bash
-# 允许级联删除 app 及其依赖数据
+# Delete app and dependent records
 curl -s -X DELETE \
   "$SERVER/v1/apps/gmail-app?cascade=true" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**预期**: 200，随后查询 apps / user-secrets / instances 对应记录已移除
+**Expected**: 200; corresponding records should be removed from apps / user-secrets / instances.
 
 ---
 
 ## Checklist
 
-| # | 测试项 | 预期 | 通过 |
+| # | Test Item | Expected | Pass |
 |---|--------|------|------|
-| A1 | 生成 Master Key + Admin Token | 两个值都记录 | ☐ |
-| A3 | 注册 App (带 admin token) | 201 created | ☐ |
-| A4 | OAuth 授权 | authorized + email | ☐ |
-| A6 | 注册 TEE Instance | 201 registered, FID 匹配 | ☐ |
-| A7 | curl fetch secrets | 3 个 base64 blob 返回 | ☐ |
-| B2 | 二进制版本 | linux/amd64 | ☐ |
-| B3 | jingui init | 生成 .appkeys.json + 输出 pubkey/FID | ☐ |
-| B6 | jingui read | 输出真实 client_id | ☐ |
-| B7 | stdout 掩蔽 | [REDACTED_BY_JINGUI] | ☐ |
-| B8 | stderr 掩蔽 | [REDACTED_BY_JINGUI] | ☐ |
-| B9 | 多 secret 掩蔽 | 三个全部掩蔽 | ☐ |
-| B10 | 普通 env 透传 | account=user@example.com | ☐ |
-| B11 | 退出码传递 | exit code: 42 | ☐ |
-| B12 | gogcli 集成 | 正常工作 + 输出无泄漏 | ☐ |
-| C0 | Admin Token 认证 | 无/错 token → 401, secrets/fetch 不需 token | ☐ |
-| C1 | 错误 app_id | 403 | ☐ |
-| C2 | 错误 user_id | 403 | ☐ |
-| C3 | 不存在 FID | 404 | ☐ |
+| A1 | Generate Master Key + Admin Token | both values recorded | ☐ |
+| A3 | Register App (with admin token) | 201 created | ☐ |
+| A4 | OAuth authorization | authorized + email | ☐ |
+| A6 | Register TEE Instance | 201 registered, FID matches | ☐ |
+| A7 | curl fetch secrets | 3 base64 blobs returned | ☐ |
+| B2 | Binary version | linux/amd64 | ☐ |
+| B3 | `jingui init` | `.appkeys.json` generated + pubkey/FID printed | ☐ |
+| B6 | `jingui read` | real `client_id` printed | ☐ |
+| B7 | stdout redaction | `[REDACTED_BY_JINGUI]` | ☐ |
+| B8 | stderr redaction | `[REDACTED_BY_JINGUI]` | ☐ |
+| B9 | Multi-secret redaction | all three redacted | ☐ |
+| B10 | Normal env passthrough | `account=user@example.com` | ☐ |
+| B11 | Exit code propagation | `exit code: 42` | ☐ |
+| B12 | gogcli integration | works + no leaks | ☐ |
+| C0 | Admin token auth | no/wrong token → 401, `secrets/fetch` no token required | ☐ |
+| C1 | Wrong app_id | 403 | ☐ |
+| C2 | Wrong user_id | 403 | ☐ |
+| C3 | Non-existent FID | 404 | ☐ |
