@@ -46,8 +46,8 @@ echo "Building server..."
 (cd "$REPO_ROOT" && go build -o "$WORKDIR/jingui-server" ./cmd/jingui-server) || { echo "FATAL: server build failed"; exit 1; }
 echo "  Built: $WORKDIR/jingui-server"
 
-echo "Building client (dev mode for init command)..."
-(cd "$REPO_ROOT" && go build -tags dev -o "$WORKDIR/jingui" ./cmd/jingui) || { echo "FATAL: client build failed"; exit 1; }
+echo "Building client..."
+(cd "$REPO_ROOT" && go build -o "$WORKDIR/jingui" ./cmd/jingui) || { echo "FATAL: client build failed"; exit 1; }
 echo "  Built: $WORKDIR/jingui"
 
 ########################################################################
@@ -172,14 +172,57 @@ echo "  Phase 4: Client setup"
 echo "=============================================="
 
 echo ""
-echo "--- 4.1 Generate client keys ---"
-"$WORKDIR/jingui" init -o "$WORKDIR/appkeys.json" 2>"$WORKDIR/init-stderr.txt"
-echo "  Generated: $WORKDIR/appkeys.json"
-cat "$WORKDIR/init-stderr.txt"
+echo "--- 4.1 Prepare .appkeys.json ---"
+cat > "$WORKDIR/gen_appkeys.go" <<'EOF'
+package main
 
-# Extract public key and FID from init output
-PUB_KEY=$(grep "Public Key" "$WORKDIR/init-stderr.txt" | awk '{print $NF}')
-FID=$(grep "FID" "$WORKDIR/init-stderr.txt" | head -1 | awk '{print $NF}')
+import (
+	"crypto/rand"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"golang.org/x/crypto/curve25519"
+)
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: gen_appkeys <output>")
+		os.Exit(2)
+	}
+	out := os.Args[1]
+
+	var priv [32]byte
+	if _, err := rand.Read(priv[:]); err != nil {
+		panic(err)
+	}
+	pub, err := curve25519.X25519(priv[:], curve25519.Basepoint)
+	if err != nil {
+		panic(err)
+	}
+
+	data, err := json.MarshalIndent(map[string]string{"env_crypt_key": hex.EncodeToString(priv[:])}, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(out, data, 0600); err != nil {
+		panic(err)
+	}
+
+	h := sha1.Sum(pub)
+	fmt.Printf("Public Key : %s\n", hex.EncodeToString(pub))
+	fmt.Printf("FID        : %s\n", hex.EncodeToString(h[:]))
+}
+EOF
+
+(cd "$REPO_ROOT" && go run "$WORKDIR/gen_appkeys.go" "$WORKDIR/appkeys.json") >"$WORKDIR/keygen.txt"
+echo "  Generated: $WORKDIR/appkeys.json"
+cat "$WORKDIR/keygen.txt"
+
+PUB_KEY=$(grep "Public Key" "$WORKDIR/keygen.txt" | awk '{print $NF}')
+FID=$(grep "FID" "$WORKDIR/keygen.txt" | head -1 | awk '{print $NF}')
 echo "  Public Key: $PUB_KEY"
 echo "  FID: $FID"
 check "  Public key is 64 hex chars" "64" "${#PUB_KEY}"

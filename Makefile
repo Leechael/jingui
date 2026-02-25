@@ -3,7 +3,7 @@ COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS   := -X github.com/aspect-build/jingui/internal/version.Version=$(VERSION) \
              -X github.com/aspect-build/jingui/internal/version.GitCommit=$(COMMIT)
 
-.PHONY: build build-client build-server build-dev test clean lint bdd ci \
+.PHONY: build build-client build-server test clean lint bdd ci \
 	build-client-linux-amd64 build-client-linux-arm64 build-client-darwin-amd64 build-client-darwin-arm64 \
 	build-server-linux-amd64 build-server-linux-arm64 build-server-darwin-amd64 build-server-darwin-arm64 \
 	build-all
@@ -16,9 +16,6 @@ build-client:
 
 build-server:
 	go build -ldflags '$(LDFLAGS)' -o bin/jingui-server ./cmd/jingui-server
-
-build-dev:
-	go build -tags dev -ldflags '$(LDFLAGS)' -o bin/jingui-dev ./cmd/jingui
 
 # ── Cross-compilation (client) ──────────────────────────────────────
 build-client-linux-amd64:

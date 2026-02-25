@@ -2,65 +2,75 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Jingui API",
-    "version": "0.1.0",
-    "description": "Current server API surface for jingui-server"
+    "version": "0.1.1",
+    "description": "Current jingui-server API surface (implementation-aligned)"
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
   },
   "paths": {
     "/": {
-      "get": {
-        "summary": "Liveness root",
-        "responses": {
-          "200": {
-            "description": "ok"
-          }
-        }
-      }
+      "get": { "summary": "Liveness root", "responses": { "200": { "description": "ok" } } }
     },
     "/openapi.json": {
-      "get": {
-        "summary": "OpenAPI document",
-        "responses": {
-          "200": {
-            "description": "OpenAPI JSON"
-          }
-        }
-      }
+      "get": { "summary": "OpenAPI document", "responses": { "200": { "description": "OpenAPI JSON" } } }
     },
+
+    "/v1/apps": {
+      "post": { "summary": "Create app", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "Created" } } },
+      "get": { "summary": "List apps", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/v1/apps/{app_id}": {
+      "put": { "summary": "Update app", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Updated" } } },
+      "get": { "summary": "Get app", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } },
+      "delete": { "summary": "Delete app", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Deleted" }, "409": { "description": "Has dependents" } } }
+    },
+
+    "/v1/instances": {
+      "post": { "summary": "Register instance", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "Registered" } } },
+      "get": { "summary": "List instances", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/v1/instances/{fid}": {
+      "get": { "summary": "Get instance", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } },
+      "delete": { "summary": "Delete instance", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Deleted" }, "404": { "description": "Not found" } } }
+    },
+
+    "/v1/user-secrets": {
+      "get": { "summary": "List user secrets (metadata)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/v1/user-secrets/{app_id}/{user_id}": {
+      "get": { "summary": "Get user secret (metadata)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } },
+      "delete": { "summary": "Delete user secret", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Deleted" }, "409": { "description": "Has dependents" } } }
+    },
+
     "/v1/debug-policy/{app_id}/{user_id}": {
-      "get": {
-        "summary": "Get debug-read policy",
-        "parameters": [
-          {"name": "app_id", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "user_id", "in": "path", "required": true, "schema": {"type": "string"}}
-        ],
-        "responses": {
-          "200": {"description": "Policy"}
-        }
-      },
-      "put": {
-        "summary": "Update debug-read policy",
-        "parameters": [
-          {"name": "app_id", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "user_id", "in": "path", "required": true, "schema": {"type": "string"}}
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "allow_read_debug": {"type": "boolean"}
-                },
-                "required": ["allow_read_debug"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {"description": "Updated"}
-        }
-      }
+      "get": { "summary": "Get debug-read policy", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Policy" } } },
+      "put": { "summary": "Update debug-read policy", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Updated" } } }
+    },
+
+    "/v1/credentials/{app_id}": {
+      "put": { "summary": "Store direct credentials", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Stored" } } }
+    },
+    "/v1/credentials/gateway/{app_id}": {
+      "get": { "summary": "Start OAuth redirect flow", "security": [{ "bearerAuth": [] }], "responses": { "302": { "description": "Redirect" } } }
+    },
+    "/v1/credentials/device/{app_id}": {
+      "post": { "summary": "Start OAuth device flow", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Started" } } }
+    },
+    "/v1/credentials/callback": {
+      "get": { "summary": "OAuth callback", "responses": { "200": { "description": "Authorized" }, "400": { "description": "Invalid callback" } } }
+    },
+
+    "/v1/secrets/challenge": {
+      "post": { "summary": "Issue PoP challenge", "responses": { "200": { "description": "Challenge" }, "404": { "description": "Instance not found" } } }
+    },
+    "/v1/secrets/fetch": {
+      "post": { "summary": "Verify challenge and fetch encrypted secrets", "responses": { "200": { "description": "Encrypted secrets" }, "401": { "description": "Challenge verification failed" } } }
     }
   }
 }

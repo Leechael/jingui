@@ -6,9 +6,9 @@ Values such as keys, FID, and public key are generated dynamically during execut
 > If you want a quick local end-to-end regression first, run: `scripts/manual-test.sh`.
 > The script already covers app / instance / user-secret admin CRUD checks and cascade-delete scenarios.
 >
-> ⚠️ The design has been confirmed to move to `jingui://<service>/<slug>/<field>` semantics.
-> `app_id` will no longer appear in secret references.
-> Some examples below still use the old format and will be updated after schema/handler refactor is complete.
+> ✅ Current implementation uses `jingui://<app_id>/<user_id>/<field>` semantics.
+> Examples in this guide follow the current server/client behavior.
+> A future migration to `jingui://<service>/<slug>/<field>` is tracked separately and not enabled yet.
 
 ---
 
@@ -17,10 +17,10 @@ Values such as keys, FID, and public key are generated dynamically during execut
 On your development machine:
 
 ```bash
-# Verify versions
+# Build runtime binaries
 make clean build
-bin/jingui --version        # → jingui dev (commit=..., go=..., darwin/arm64)
-bin/jingui-server -v        # → jingui-server dev (commit=..., go=..., darwin/arm64)
+bin/jingui --version        # → jingui ...
+bin/jingui-server -v        # → jingui-server ...
 
 # Cross-compile linux/amd64 client for TDX
 make build-client-linux-amd64
@@ -170,12 +170,12 @@ Continue with Part B in TDX to generate keys, then come back with the **public_k
 Required file:
 
 ```
-bin/linux-amd64/jingui     # client binary
+bin/linux-amd64/jingui      # runtime client binary
 ```
 
 ```bash
 # Example: scp to TDX instance
-scp bin/linux-amd64/jingui  tdx-host:/opt/jingui/jingui
+scp bin/linux-amd64/jingui tdx-host:/opt/jingui/jingui
 
 # Make executable inside TDX
 ssh tdx-host 'chmod +x /opt/jingui/jingui'
@@ -186,39 +186,40 @@ ssh tdx-host 'chmod +x /opt/jingui/jingui'
 ```bash
 # Inside TDX
 /opt/jingui/jingui --version
-# → jingui dev (commit=..., go=..., linux/amd64)
-
-/opt/jingui/jingui --help
+# → jingui ... (linux/amd64)
 ```
 
 **Check ✓**: version output shows `linux/amd64`
 
-### B3. Generate Key Pair (`.appkeys.json`)
+### B3. Use TEE-provisioned `.appkeys.json` and inspect identity
+
+`jingui` does not generate keys. `.appkeys.json` should be provisioned by TEE/KMS flow (default path: `/dstack/.host-shared/.appkeys.json`).
+
+Run status to print local identity (FID/public key):
 
 ```bash
-cd /opt/jingui
-./jingui init -o .appkeys.json
+/opt/jingui/jingui status \
+  --server "http://<SERVER_IP>:8080" \
+  --appkeys /dstack/.host-shared/.appkeys.json \
+  --insecure
 ```
 
-Example output:
+Example output (before registration):
 
 ```
-Wrote .appkeys.json
-
-Public Key : 7a8b3c...  (64 hex chars)
-FID        : 2f4e9d...  (40 hex chars)
-
-Use the public key to register this instance:
-  curl -X POST $SERVER/v1/instances \
-    -H 'Content-Type: application/json' \
-    -d '{"public_key":"7a8b3c...","bound_app_id":"<APP_ID>","bound_user_id":"<EMAIL>"}'
+appkeys_path=/dstack/.host-shared/.appkeys.json
+fid=2f4e9d...
+public_key=7a8b3c...
+server=http://<SERVER_IP>:8080
+registered=false
+status_error=challenge endpoint returned 404: {"error":"instance not found"}
 ```
 
 **Record:**
 - `Public Key`: **____________________________**
 - `FID`: **____________________________**
 
-> `.appkeys.json` contains private key material and is set to permission `0600`. Do not copy it out of TDX.
+> `.appkeys.json` contains private key material. Do not copy it out of TDX.
 
 ### B4. (Pause) Return to Server Side for Registration
 
@@ -258,34 +259,24 @@ curl -s -X POST "$SERVER/v1/instances" \
 
 **Check ✓**:
 - HTTP 201
-- Returned `fid` matches the FID output from B3 `jingui init`
+- Returned `fid` matches the FID shown in B3 status output
 
-### A7. Direct `secrets/fetch` Test with curl (Optional)
+### A7. Challenge Endpoint Smoke Test (Optional)
+
+`/v1/secrets/fetch` now requires challenge-response proof (`challenge_id` + `challenge_response`).
+If you only want a quick server-side check, verify challenge issuance:
 
 ```bash
 FID="<FID from B3>"
 
-curl -s -X POST "$SERVER/v1/secrets/fetch" \
+curl -s -X POST "$SERVER/v1/secrets/challenge" \
   -H 'Content-Type: application/json' \
-  -d "$(jq -n \
-    --arg fid "$FID" \
-    '{fid:$fid, secret_references:["jingui://gmail-app/'"$EMAIL"'/client_id","jingui://gmail-app/'"$EMAIL"'/client_secret","jingui://gmail-app/'"$EMAIL"'/refresh_token"]}'
-  )" | jq .
+  -d "$(jq -n --arg fid "$FID" '{fid:$fid}')" | jq .
 ```
 
-**Expected response:**
+**Expected response:** includes non-empty `challenge_id` and `challenge` (base64 ECIES blob).
 
-```json
-{
-  "secrets": {
-    "jingui://gmail-app/user@example.com/client_id": "<base64 ECIES blob>",
-    "jingui://gmail-app/user@example.com/client_secret": "<base64 ECIES blob>",
-    "jingui://gmail-app/user@example.com/refresh_token": "<base64 ECIES blob>"
-  }
-}
-```
-
-**Check ✓**: all 3 keys are returned, each value is a base64-encoded ECIES ciphertext.
+For full end-to-end fetch/decrypt validation, continue with client-side tests in Part B (`jingui read` / `jingui run`).
 
 ---
 
@@ -461,44 +452,53 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
 # Expected: 401
 
-# secrets/fetch does not require admin token (for TEE callers)
-curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/fetch" \
+# secrets/challenge is a TEE caller endpoint (no admin token)
+curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
   -H 'Content-Type: application/json' \
-  -d '{"fid":"nonexistent","secret_references":[]}'
-# Expected: not 401 (should be 404)
+  -d '{"fid":"0000000000000000000000000000000000000000"}'
+# Expected: 404 (instance not found), not 401
 ```
 
-**Check ✓**: admin APIs (apps, instances, gateway) require correct Bearer token; `secrets/fetch` does not.
+**Check ✓**: admin APIs require Bearer token; TEE secret endpoints do not use admin token auth.
 
-### C1. Wrong `app_id`
+### C1. Wrong `app_id` (via client read)
 
 ```bash
-curl -s -X POST "$SERVER/v1/secrets/fetch" \
-  -H 'Content-Type: application/json' \
-  -d '{"fid":"'"$FID"'","secret_references":["jingui://wrong-app/user@example.com/client_id"]}'
+./jingui read \
+  --server "http://<SERVER_IP>:8080" \
+  --appkeys .appkeys.json \
+  --insecure \
+  "jingui://wrong-app/user@example.com/client_id"
 ```
 
-**Expected**: HTTP 403 `{"error":"app_id mismatch ..."}`
+**Expected**: request fails with HTTP 403 (`app_id mismatch ...`).
 
-### C2. Wrong `user_id`
+### C2. Wrong `user_id` (via client read)
 
 ```bash
-curl -s -X POST "$SERVER/v1/secrets/fetch" \
-  -H 'Content-Type: application/json' \
-  -d '{"fid":"'"$FID"'","secret_references":["jingui://gmail-app/wrong@example.com/client_id"]}'
+./jingui read \
+  --server "http://<SERVER_IP>:8080" \
+  --appkeys .appkeys.json \
+  --insecure \
+  "jingui://gmail-app/wrong@example.com/client_id"
 ```
 
-**Expected**: HTTP 403 `{"error":"user_id mismatch ..."}`
+**Expected**: request fails with HTTP 403 (`user_id mismatch ...`).
 
 ### C3. Non-existent FID
 
 ```bash
-curl -s -X POST "$SERVER/v1/secrets/fetch" \
-  -H 'Content-Type: application/json' \
-  -d '{"fid":"0000000000000000000000000000000000000000","secret_references":["jingui://gmail-app/user@example.com/client_id"]}'
+# Use a different TEE instance's appkeys file that has NOT been registered on this server
+UNREGISTERED_APPKEYS="/path/to/another-instance/.appkeys.json"
+
+./jingui read \
+  --server "http://<SERVER_IP>:8080" \
+  --appkeys "$UNREGISTERED_APPKEYS" \
+  --insecure \
+  "jingui://gmail-app/user@example.com/client_id"
 ```
 
-**Expected**: HTTP 404 `{"error":"instance not found"}`
+**Expected**: request fails with HTTP 404 (`instance not found`).
 
 ---
 
@@ -549,9 +549,9 @@ curl -s -X DELETE \
 | A3 | Register App (with admin token) | 201 created | ☐ |
 | A4 | OAuth authorization | authorized + email | ☐ |
 | A6 | Register TEE Instance | 201 registered, FID matches | ☐ |
-| A7 | curl fetch secrets | 3 base64 blobs returned | ☐ |
+| A7 | challenge endpoint smoke test | returns challenge_id + challenge | ☐ |
 | B2 | Binary version | linux/amd64 | ☐ |
-| B3 | `jingui init` | `.appkeys.json` generated + pubkey/FID printed | ☐ |
+| B3 | `jingui status` | FID/public_key printed from provisioned `.appkeys.json` | ☐ |
 | B6 | `jingui read` | real `client_id` printed | ☐ |
 | B7 | stdout redaction | `[REDACTED_BY_JINGUI]` | ☐ |
 | B8 | stderr redaction | `[REDACTED_BY_JINGUI]` | ☐ |
@@ -559,7 +559,7 @@ curl -s -X DELETE \
 | B10 | Normal env passthrough | `account=user@example.com` | ☐ |
 | B11 | Exit code propagation | `exit code: 42` | ☐ |
 | B12 | gogcli integration | works + no leaks | ☐ |
-| C0 | Admin token auth | no/wrong token → 401, `secrets/fetch` no token required | ☐ |
+| C0 | Admin token auth | no/wrong token → 401, TEE secret endpoints are not admin-token protected | ☐ |
 | C1 | Wrong app_id | 403 | ☐ |
 | C2 | Wrong user_id | 403 | ☐ |
 | C3 | Non-existent FID | 404 | ☐ |

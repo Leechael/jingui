@@ -15,8 +15,6 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
-// devCommands is populated by dev.go (build tag "dev") with dev-only subcommands.
-var devCommands []*cobra.Command
 
 // resolveServerURL returns the server URL from the flag or JINGUI_SERVER_URL env var.
 // Prints a warning to stderr when falling back to the env var.
@@ -52,9 +50,6 @@ func main() {
 	rootCmd.AddCommand(newReadCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newExecCmd())
-	for _, cmd := range devCommands {
-		rootCmd.AddCommand(cmd)
-	}
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

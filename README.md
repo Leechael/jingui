@@ -58,8 +58,9 @@ docker run -d \
 Create a `.env` file with secret references:
 
 ```env
-GMAIL_TOKEN=jingui://gmail/user@example.com/token
-GMAIL_WORK_TOKEN=jingui://gmail/work/token
+GMAIL_CLIENT_ID=jingui://my-gmail/user@example.com/client_id
+GMAIL_CLIENT_SECRET=jingui://my-gmail/user@example.com/client_secret
+GMAIL_REFRESH_TOKEN=jingui://my-gmail/user@example.com/refresh_token
 DATABASE_URL=postgres://localhost/mydb
 ```
 
@@ -78,7 +79,7 @@ jingui status --server https://jingui.example.com
 Read one secret (metadata is hidden by default):
 
 ```bash
-jingui read --server https://jingui.example.com 'jingui://gmail/work/token'
+jingui read --server https://jingui.example.com 'jingui://my-gmail/user@example.com/client_id'
 # use --show-meta to print FID/Public Key to stderr for debugging
 ```
 
@@ -97,15 +98,16 @@ Lines with `jingui://` URIs are fetched and decrypted; plain values pass through
 ## Secret Reference Format
 
 ```
-jingui://<service>/<slug_or_email>/<field_name>
+jingui://<app_id>/<user_id>/<field_name>
 ```
 
 Examples:
 
-- `jingui://gmail/foo@example.com/token`
-- `jingui://gmail/work/token`
+- `jingui://my-gmail/user@example.com/client_id`
+- `jingui://my-gmail/user@example.com/client_secret`
+- `jingui://my-gmail/user@example.com/refresh_token`
 
-`app_id` is **not** encoded in secret references. In the target design, workload identity (`app_id`) comes from TEE attestation (RA-TLS), while the reference only selects a secret namespace inside that workload.
+> Note: migration to `jingui://<service>/<slug>/<field>` is planned, but current stable implementation and tests use `<app_id>/<user_id>/<field>`.
 
 ## Security Model
 
