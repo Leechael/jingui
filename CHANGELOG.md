@@ -1,3 +1,7 @@
+## v0.1.1 (2026-02-25)
+
+- feat: add status, runtime read policy, URL normalization, and openapi endpoint
+
 ## v0.1.0 (2026-02-24)
 
 - refactor: start secret-ref migration to service/slug semantics
