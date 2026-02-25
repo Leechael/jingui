@@ -44,9 +44,11 @@ type fetchSecretsResponse struct {
 }
 
 type challengeEntry struct {
-	FID       string
-	Nonce     []byte
-	ExpiresAt time.Time
+	FID        string
+	Nonce      []byte
+	ExpiresAt  time.Time
+	RAVerified bool
+	StrictMode bool
 }
 
 type challengeStore struct {
@@ -58,7 +60,7 @@ var fetchChallengeStore = &challengeStore{
 	entries: make(map[string]challengeEntry),
 }
 
-func (s *challengeStore) issue(fid string, nonce []byte, now time.Time) (string, error) {
+func (s *challengeStore) issue(fid string, nonce []byte, raVerified bool, strictMode bool, now time.Time) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -74,14 +76,16 @@ func (s *challengeStore) issue(fid string, nonce []byte, now time.Time) (string,
 	copy(nonceCopy, nonce)
 
 	s.entries[id] = challengeEntry{
-		FID:       fid,
-		Nonce:     nonceCopy,
-		ExpiresAt: now.Add(challengeTTL),
+		FID:        fid,
+		Nonce:      nonceCopy,
+		ExpiresAt:  now.Add(challengeTTL),
+		RAVerified: raVerified,
+		StrictMode: strictMode,
 	}
 	return id, nil
 }
 
-func (s *challengeStore) consume(challengeID, fid string, response []byte, now time.Time) error {
+func (s *challengeStore) consume(challengeID, fid string, response []byte, strictMode bool, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -95,6 +99,14 @@ func (s *challengeStore) consume(challengeID, fid string, response []byte, now t
 
 	if entry.FID != fid {
 		return fmt.Errorf("challenge fid mismatch")
+	}
+	if strictMode {
+		if !entry.StrictMode {
+			return fmt.Errorf("challenge mode mismatch")
+		}
+		if !entry.RAVerified {
+			return fmt.Errorf("challenge is not RA-verified")
+		}
 	}
 	if subtle.ConstantTimeCompare(entry.Nonce, response) != 1 {
 		return fmt.Errorf("invalid challenge response")
@@ -185,7 +197,7 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 			return
 		}
 
-		challengeID, err := fetchChallengeStore.issue(req.FID, nonce, time.Now())
+		challengeID, err := fetchChallengeStore.issue(req.FID, nonce, !strict || req.ClientAttestation != nil, strict, time.Now())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue challenge"})
 			return
@@ -200,7 +212,7 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 }
 
 // HandleFetchSecrets handles POST /v1/secrets/fetch.
-func HandleFetchSecrets(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
+func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req fetchSecretsRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -213,7 +225,7 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "challenge_response must be valid base64"})
 			return
 		}
-		if err := fetchChallengeStore.consume(req.ChallengeID, req.FID, challengeResponse, time.Now()); err != nil {
+		if err := fetchChallengeStore.consume(req.ChallengeID, req.FID, challengeResponse, strict, time.Now()); err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "challenge verification failed: " + err.Error()})
 			return
 		}

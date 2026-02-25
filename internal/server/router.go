@@ -53,7 +53,7 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 
 		// Secret fetch — requires proof-of-possession challenge response, then returns
 		// payload encrypted to the registered TEE public key.
-		v1.POST("/secrets/fetch", handler.HandleFetchSecrets(store, cfg.MasterKey))
+		v1.POST("/secrets/fetch", handler.HandleFetchSecrets(store, cfg.MasterKey, cfg.RATLSStrict))
 	}
 
 	return r
