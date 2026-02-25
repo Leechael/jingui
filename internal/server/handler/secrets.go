@@ -156,6 +156,14 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "client_attestation is required in strict RA-TLS mode"})
 				return
 			}
+			if strings.TrimSpace(req.ClientAttestation.AppID) == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "client_attestation.app_id is required in strict RA-TLS mode"})
+				return
+			}
+			if req.ClientAttestation.AppID != inst.BoundAppID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "client attestation app_id mismatch"})
+				return
+			}
 
 			identity, err := verifier.Verify(c.Request.Context(), *req.ClientAttestation)
 			if err != nil {
@@ -164,10 +172,6 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 			}
 			if identity.AppID != "" && identity.AppID != inst.BoundAppID {
 				c.JSON(http.StatusForbidden, gin.H{"error": "client RA app_id mismatch"})
-				return
-			}
-			if req.ClientAttestation.AppID != "" && req.ClientAttestation.AppID != inst.BoundAppID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "client attestation app_id mismatch"})
 				return
 			}
 

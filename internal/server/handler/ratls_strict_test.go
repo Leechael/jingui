@@ -12,14 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestIssueChallenge_StrictRequiresClientAttestation(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
+func newStrictChallengeRouter(t *testing.T) *gin.Engine {
 	store, err := db.NewStore(":memory:")
 	if err != nil {
 		t.Fatalf("new store: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() { _ = store.Close() })
 
 	app := &db.App{
 		AppID:                "a1",
@@ -40,6 +38,12 @@ func TestIssueChallenge_StrictRequiresClientAttestation(t *testing.T) {
 
 	r := gin.New()
 	r.POST("/v1/secrets/challenge", HandleIssueChallenge(store, true, attestation.NewRATLSVerifier(), attestation.NewDstackInfoCollector("")))
+	return r
+}
+
+func TestIssueChallenge_StrictRequiresClientAttestation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := newStrictChallengeRouter(t)
 
 	body, _ := json.Marshal(map[string]any{"fid": "f1"})
 	req := httptest.NewRequest(http.MethodPost, "/v1/secrets/challenge", bytes.NewReader(body))
@@ -49,5 +53,46 @@ func TestIssueChallenge_StrictRequiresClientAttestation(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestIssueChallenge_StrictRequiresClientAttestationAppID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := newStrictChallengeRouter(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"fid": "f1",
+		"client_attestation": map[string]any{
+			"app_cert": "dummy",
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/secrets/challenge", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestIssueChallenge_StrictRejectsMismatchedClientAttestationAppID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := newStrictChallengeRouter(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"fid": "f1",
+		"client_attestation": map[string]any{
+			"app_id":   "wrong",
+			"app_cert": "dummy",
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/secrets/challenge", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", w.Code, w.Body.String())
 	}
 }
