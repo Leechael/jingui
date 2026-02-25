@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/aspect-build/jingui/internal/attestation"
 	"github.com/aspect-build/jingui/internal/server/db"
 	"github.com/aspect-build/jingui/internal/server/handler"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,8 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 	r.StaticFile("/openapi.json", "docs/openapi.json")
 
 	admin := AdminAuth(cfg.AdminToken)
+	verifier := attestation.NewRATLSVerifier()
+	collector := attestation.NewDstackInfoCollector("")
 
 	v1 := r.Group("/v1")
 	{
@@ -46,7 +49,7 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 		v1.GET("/credentials/callback", handler.HandleOAuthCallback(store, cfg.MasterKey, cfg.BaseURL))
 
 		// Client proof-of-possession challenge (no admin auth).
-		v1.POST("/secrets/challenge", handler.HandleIssueChallenge(store))
+		v1.POST("/secrets/challenge", handler.HandleIssueChallenge(store, cfg.RATLSStrict, verifier, collector))
 
 		// Secret fetch — requires proof-of-possession challenge response, then returns
 		// payload encrypted to the registered TEE public key.

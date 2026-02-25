@@ -67,7 +67,15 @@
     },
 
     "/v1/secrets/challenge": {
-      "post": { "summary": "Issue PoP challenge", "responses": { "200": { "description": "Challenge" }, "404": { "description": "Instance not found" } } }
+      "post": {
+        "summary": "Issue PoP challenge",
+        "description": "In strict RA-TLS mode, request must include client_attestation and response includes server_attestation.",
+        "responses": {
+          "200": { "description": "Challenge" },
+          "401": { "description": "Attestation verification failed / required" },
+          "404": { "description": "Instance not found" }
+        }
+      }
     },
     "/v1/secrets/fetch": {
       "post": { "summary": "Verify challenge and fetch encrypted secrets", "responses": { "200": { "description": "Encrypted secrets" }, "401": { "description": "Challenge verification failed" } } }

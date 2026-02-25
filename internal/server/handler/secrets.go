@@ -112,7 +112,7 @@ func (s *challengeStore) gcLocked(now time.Time) {
 
 // HandleIssueChallenge handles POST /v1/secrets/challenge.
 // It returns an ECIES-encrypted random challenge bound to the given FID.
-func HandleIssueChallenge(store *db.Store) gin.HandlerFunc {
+func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Verifier, serverCollector attestation.Collector) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req issueChallengeRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -132,6 +132,43 @@ func HandleIssueChallenge(store *db.Store) gin.HandlerFunc {
 		if len(inst.PublicKey) != 32 {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid instance public key length"})
 			return
+		}
+
+		var serverAtt *attestation.Bundle
+		if strict {
+			if verifier == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "attestation verifier is not configured"})
+				return
+			}
+			if req.ClientAttestation == nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "client_attestation is required in strict RA-TLS mode"})
+				return
+			}
+
+			identity, err := verifier.Verify(c.Request.Context(), *req.ClientAttestation)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "client RA verification failed: " + err.Error()})
+				return
+			}
+			if identity.AppID != "" && identity.AppID != inst.BoundAppID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "client RA app_id mismatch"})
+				return
+			}
+			if req.ClientAttestation.AppID != "" && req.ClientAttestation.AppID != inst.BoundAppID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "client attestation app_id mismatch"})
+				return
+			}
+
+			if serverCollector == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "server attestation collector is not configured"})
+				return
+			}
+			bundle, err := serverCollector.Collect(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to collect server attestation: " + err.Error()})
+				return
+			}
+			serverAtt = &bundle
 		}
 
 		nonce := make([]byte, 32)
@@ -155,8 +192,9 @@ func HandleIssueChallenge(store *db.Store) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, issueChallengeResponse{
-			ChallengeID: challengeID,
-			Challenge:   base64.StdEncoding.EncodeToString(challengeBlob),
+			ChallengeID:       challengeID,
+			Challenge:         base64.StdEncoding.EncodeToString(challengeBlob),
+			ServerAttestation: serverAtt,
 		})
 	}
 }

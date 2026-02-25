@@ -52,6 +52,7 @@ docker run -d \
 | `JINGUI_DB_PATH` | No | `jingui.db` | SQLite database path |
 | `JINGUI_LISTEN_ADDR` | No | `:8080` | Listen address |
 | `JINGUI_BASE_URL` | No | `http://localhost:8080` | Public URL for OAuth callbacks |
+| `JINGUI_RATLS_STRICT` | No | `true` | Require client/server attestation exchange in challenge/fetch flow |
 
 ### Client
 
@@ -124,6 +125,15 @@ make build          # current platform
 make build-all      # cross-compile all 8 binaries (2 × 4 platforms)
 make ci             # lint + test + bdd
 ```
+
+RA-TLS verifier path (dcap-qvl linked build):
+
+```bash
+go build -tags ratls -o bin/jingui-server ./cmd/jingui-server
+go build -tags ratls -o bin/jingui ./cmd/jingui
+```
+
+> Without `-tags ratls`, attestation verifier runs in stub mode and strict RA-TLS requests will fail closed.
 
 Docker:
 
