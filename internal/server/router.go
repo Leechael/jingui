@@ -10,6 +10,11 @@ import (
 func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 	r := gin.Default()
 
+	r.GET("/", func(c *gin.Context) {
+		c.String(200, "ok")
+	})
+	r.StaticFile("/openapi.json", "docs/openapi.json")
+
 	admin := AdminAuth(cfg.AdminToken)
 
 	v1 := r.Group("/v1")
@@ -28,6 +33,9 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 		v1.GET("/user-secrets", admin, handler.HandleListUserSecrets(store))
 		v1.GET("/user-secrets/:app_id/:user_id", admin, handler.HandleGetUserSecret(store))
 		v1.DELETE("/user-secrets/:app_id/:user_id", admin, handler.HandleDeleteUserSecret(store))
+
+		v1.GET("/debug-policy/:app_id/:user_id", admin, handler.HandleGetDebugPolicy(store))
+		v1.PUT("/debug-policy/:app_id/:user_id", admin, handler.HandlePutDebugPolicy(store))
 
 		v1.GET("/credentials/gateway/:app_id", admin, handler.HandleOAuthGateway(store, cfg.MasterKey, cfg.BaseURL))
 		v1.POST("/credentials/device/:app_id", admin, handler.HandleDeviceAuth(store, cfg.MasterKey))

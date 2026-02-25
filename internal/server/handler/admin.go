@@ -244,3 +244,44 @@ func HandleDeleteUserSecret(store *db.Store) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"status": "deleted", "app_id": appID, "user_id": userID})
 	}
 }
+
+// HandleGetDebugPolicy handles GET /v1/debug-policy/:app_id/:user_id.
+func HandleGetDebugPolicy(store *db.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		appID := c.Param("app_id")
+		userID := c.Param("user_id")
+		p, err := store.GetDebugPolicy(appID, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get debug policy"})
+			return
+		}
+		if p == nil {
+			// default allow=true if no policy row exists
+			c.JSON(http.StatusOK, gin.H{"app_id": appID, "user_id": userID, "allow_read_debug": true, "source": "default"})
+			return
+		}
+		c.JSON(http.StatusOK, p)
+	}
+}
+
+type putDebugPolicyRequest struct {
+	AllowReadDebug bool `json:"allow_read_debug"`
+}
+
+// HandlePutDebugPolicy handles PUT /v1/debug-policy/:app_id/:user_id.
+func HandlePutDebugPolicy(store *db.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		appID := c.Param("app_id")
+		userID := c.Param("user_id")
+		var req putDebugPolicyRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := store.UpsertDebugPolicy(appID, userID, req.AllowReadDebug); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update debug policy"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "updated", "app_id": appID, "user_id": userID, "allow_read_debug": req.AllowReadDebug})
+	}
+}

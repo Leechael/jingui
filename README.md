@@ -69,12 +69,18 @@ Run your application:
 jingui run --server https://jingui.example.com -- python app.py
 ```
 
+Check local instance status and registration:
+
+```bash
+jingui status --server https://jingui.example.com
+```
+
 Lines with `jingui://` URIs are fetched and decrypted; plain values pass through unchanged.
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--server` | `JINGUI_SERVER_URL` env | Server URL (required) |
-| `--appkeys` | `.appkeys.json` | Path to X25519 private key file |
+| `--appkeys` | `/dstack/.host-shared/.appkeys.json` | Path to X25519 private key file |
 | `--env-file` | `.env` | Environment file with secret refs |
 | `--insecure` | `false` | Allow plaintext HTTP |
 | `--no-lockdown` | `false` | Disable seccomp hardening |
@@ -117,6 +123,8 @@ docker build --target client -t jingui .
 
 ## API Overview
 
+- OpenAPI JSON: `/openapi.json` (also committed as `docs/openapi.json`)
+
 **Admin endpoints** (require `Authorization: Bearer <ADMIN_TOKEN>`):
 
 ### App management
@@ -144,6 +152,13 @@ docker build --target client -t jingui .
 | GET | `/v1/user-secrets` | List user-secret metadata (supports `?app_id=` filter) |
 | GET | `/v1/user-secrets/:app_id/:user_id` | Get one user-secret metadata record |
 | DELETE | `/v1/user-secrets/:app_id/:user_id` | Delete user secret (`?cascade=true` deletes dependent instances) |
+
+### Debug policy APIs (runtime user-level read control)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/debug-policy/:app_id/:user_id` | Get whether `jingui read` is allowed for this user |
+| PUT | `/v1/debug-policy/:app_id/:user_id` | Update `allow_read_debug` at runtime |
 
 ### Credential APIs
 

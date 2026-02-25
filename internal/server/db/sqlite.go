@@ -74,6 +74,13 @@ func (s *Store) migrate() error {
 				last_used_at DATETIME,
 				FOREIGN KEY (bound_app_id, bound_user_id) REFERENCES user_secrets(app_id, user_id)
 			)`,
+		`CREATE TABLE IF NOT EXISTS debug_policies (
+			app_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			allow_read_debug INTEGER NOT NULL DEFAULT 1,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (app_id, user_id)
+		)`,
 	}
 
 	for _, m := range migrations {
