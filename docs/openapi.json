@@ -1,0 +1,66 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Jingui API",
+    "version": "0.1.0",
+    "description": "Current server API surface for jingui-server"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Liveness root",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "OpenAPI document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON"
+          }
+        }
+      }
+    },
+    "/v1/debug-policy/{app_id}/{user_id}": {
+      "get": {
+        "summary": "Get debug-read policy",
+        "parameters": [
+          {"name": "app_id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "user_id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "Policy"}
+        }
+      },
+      "put": {
+        "summary": "Update debug-read policy",
+        "parameters": [
+          {"name": "app_id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "user_id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "allow_read_debug": {"type": "boolean"}
+                },
+                "required": ["allow_read_debug"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "Updated"}
+        }
+      }
+    }
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -193,6 +194,19 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 		// Build recipient public key
 		var pubKey [32]byte
 		copy(pubKey[:], inst.PublicKey)
+
+		command := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Jingui-Command")))
+		if command == "read" {
+			policy, err := store.GetDebugPolicy(inst.BoundAppID, inst.BoundUserID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load debug policy"})
+				return
+			}
+			if policy != nil && !policy.AllowReadDebug {
+				c.JSON(http.StatusForbidden, gin.H{"error": "debug read is disabled for this user"})
+				return
+			}
+		}
 
 		secrets := make(map[string]string)
 

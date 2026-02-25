@@ -22,15 +22,23 @@ var devCommands []*cobra.Command
 // Prints a warning to stderr when falling back to the env var.
 // Returns an error if neither is set.
 func resolveServerURL(cmd *cobra.Command, flagValue string) (string, error) {
+	normalize := func(v string) string {
+		for len(v) > 0 && v[len(v)-1] == '/' {
+			v = v[:len(v)-1]
+		}
+		return v
+	}
 	if cmd.Flags().Changed("server") {
-		return flagValue, nil
+		return normalize(flagValue), nil
 	}
 	if v := os.Getenv("JINGUI_SERVER_URL"); v != "" {
 		fmt.Fprintf(os.Stderr, "jingui: WARNING: using server URL from JINGUI_SERVER_URL environment variable\n")
-		return v, nil
+		return normalize(v), nil
 	}
 	return "", fmt.Errorf("server URL required: use --server flag or set JINGUI_SERVER_URL")
 }
+
+const defaultAppkeysPath = "/dstack/.host-shared/.appkeys.json"
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -42,6 +50,7 @@ func main() {
 
 	rootCmd.AddCommand(newRunCmd())
 	rootCmd.AddCommand(newReadCmd())
+	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newExecCmd())
 	for _, cmd := range devCommands {
 		rootCmd.AddCommand(cmd)
@@ -80,7 +89,7 @@ All secret values are masked in stdout/stderr with [REDACTED_BY_JINGUI].`,
 
 	cmd.Flags().StringVar(&envFile, "env-file", ".env", "Path to .env file (skipped if not found and not explicitly set)")
 	cmd.Flags().StringVar(&serverURL, "server", "", "Jingui server URL (or set JINGUI_SERVER_URL)")
-	cmd.Flags().StringVar(&appkeysPath, "appkeys", ".appkeys.json", "Path to appkeys file")
+	cmd.Flags().StringVar(&appkeysPath, "appkeys", defaultAppkeysPath, "Path to appkeys file")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Allow plaintext HTTP connection to server")
 	cmd.Flags().BoolVar(&noLockdown, "no-lockdown", false, "Disable seccomp/ptrace lockdown on child process")
 
@@ -92,6 +101,7 @@ func newReadCmd() *cobra.Command {
 		serverURL   string
 		appkeysPath string
 		insecure    bool
+		showMeta    bool
 	)
 
 	cmd := &cobra.Command{
@@ -105,12 +115,39 @@ Prints the plaintext value to stdout. Useful for verifying connectivity.`,
 			if err != nil {
 				return err
 			}
-			return readSecret(resolved, appkeysPath, insecure, args[0])
+			return readSecret(resolved, appkeysPath, insecure, showMeta, args[0])
 		},
 	}
 
 	cmd.Flags().StringVar(&serverURL, "server", "", "Jingui server URL (or set JINGUI_SERVER_URL)")
-	cmd.Flags().StringVar(&appkeysPath, "appkeys", ".appkeys.json", "Path to appkeys file")
+	cmd.Flags().StringVar(&appkeysPath, "appkeys", defaultAppkeysPath, "Path to appkeys file")
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "Allow plaintext HTTP connection to server")
+	cmd.Flags().BoolVar(&showMeta, "show-meta", false, "Print FID/Public Key to stderr for debugging")
+
+	return cmd
+}
+
+func newStatusCmd() *cobra.Command {
+	var (
+		serverURL   string
+		appkeysPath string
+		insecure    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show local instance status and server registration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resolved, err := resolveServerURL(cmd, serverURL)
+			if err != nil {
+				return err
+			}
+			return showStatus(resolved, appkeysPath, insecure)
+		},
+	}
+
+	cmd.Flags().StringVar(&serverURL, "server", "", "Jingui server URL (or set JINGUI_SERVER_URL)")
+	cmd.Flags().StringVar(&appkeysPath, "appkeys", defaultAppkeysPath, "Path to appkeys file")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Allow plaintext HTTP connection to server")
 
 	return cmd
@@ -191,7 +228,7 @@ func runCommand(envFile string, envFileExplicit bool, serverURL, appkeysPath str
 		}
 	}
 
-	blobs, err := client.Fetch(serverURL, privKey, fid, refList, insecure)
+	blobs, err := client.Fetch(serverURL, privKey, fid, refList, insecure, "run")
 	if err != nil {
 		return fmt.Errorf("fetch secrets: %w", err)
 	}
@@ -234,7 +271,35 @@ func runCommand(envFile string, envFileExplicit bool, serverURL, appkeysPath str
 	return nil
 }
 
-func readSecret(serverURL, appkeysPath string, insecure bool, secretRef string) error {
+func showStatus(serverURL, appkeysPath string, insecure bool) error {
+	privKey, err := client.LoadPrivateKey(appkeysPath)
+	if err != nil {
+		return fmt.Errorf("load private key: %w", err)
+	}
+
+	fid, err := client.ComputeFID(privKey)
+	if err != nil {
+		return fmt.Errorf("compute FID: %w", err)
+	}
+
+	pub, _ := curve25519.X25519(privKey[:], curve25519.Basepoint)
+	fmt.Printf("appkeys_path=%s\n", appkeysPath)
+	fmt.Printf("fid=%s\n", fid)
+	fmt.Printf("public_key=%s\n", hex.EncodeToString(pub))
+
+	if err := client.CheckInstance(serverURL, fid, insecure); err != nil {
+		fmt.Printf("server=%s\n", serverURL)
+		fmt.Printf("registered=false\n")
+		fmt.Printf("status_error=%v\n", err)
+		return nil
+	}
+
+	fmt.Printf("server=%s\n", serverURL)
+	fmt.Printf("registered=true\n")
+	return nil
+}
+
+func readSecret(serverURL, appkeysPath string, insecure, showMeta bool, secretRef string) error {
 	if _, err := refparser.Parse(secretRef); err != nil {
 		return fmt.Errorf("invalid secret reference: %w", err)
 	}
@@ -249,11 +314,13 @@ func readSecret(serverURL, appkeysPath string, insecure bool, secretRef string) 
 		return fmt.Errorf("compute FID: %w", err)
 	}
 
-	pub, _ := curve25519.X25519(privKey[:], curve25519.Basepoint)
-	fmt.Fprintf(os.Stderr, "FID: %s\n", fid)
-	fmt.Fprintf(os.Stderr, "Public Key: %s\n", hex.EncodeToString(pub))
+	if showMeta {
+		pub, _ := curve25519.X25519(privKey[:], curve25519.Basepoint)
+		fmt.Fprintf(os.Stderr, "FID: %s\n", fid)
+		fmt.Fprintf(os.Stderr, "Public Key: %s\n", hex.EncodeToString(pub))
+	}
 
-	blobs, err := client.Fetch(serverURL, privKey, fid, []string{secretRef}, insecure)
+	blobs, err := client.Fetch(serverURL, privKey, fid, []string{secretRef}, insecure, "read")
 	if err != nil {
 		return fmt.Errorf("fetch secret: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aspect-build/jingui/internal/crypto"
 	"golang.org/x/crypto/curve25519"
@@ -46,9 +47,18 @@ type challengeResponse struct {
 	Challenge   string `json:"challenge"`
 }
 
+func normalizeServerURL(serverURL string) string {
+	return strings.TrimRight(serverURL, "/")
+}
+
+func httpClient() *http.Client {
+	return &http.Client{Timeout: 20 * time.Second}
+}
+
 // Fetch sends a POST /v1/secrets/fetch request and returns the encrypted blobs (base64-decoded).
 // allowInsecure controls whether plain HTTP is permitted.
-func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, allowInsecure bool) (map[string][]byte, error) {
+func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, allowInsecure bool, command string) (map[string][]byte, error) {
+	serverURL = normalizeServerURL(serverURL)
 	if !strings.HasPrefix(serverURL, "https://") {
 		if !allowInsecure {
 			return nil, fmt.Errorf("server URL %q is not HTTPS; use --insecure to allow plaintext HTTP", serverURL)
@@ -56,7 +66,7 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 		fmt.Fprintf(os.Stderr, "jingui: WARNING: communicating over plaintext HTTP (%s)\n", serverURL)
 	}
 
-	challenge, err := requestChallenge(serverURL, fid)
+	challenge, err := requestChallenge(serverURL, fid, allowInsecure)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +92,16 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	resp, err := http.Post(serverURL+"/v1/secrets/fetch", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/v1/secrets/fetch", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create fetch request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if command != "" {
+		req.Header.Set("X-Jingui-Command", command)
+	}
+
+	resp, err := httpClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch secrets: %w", err)
 	}
@@ -114,14 +133,21 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 	return blobs, nil
 }
 
-func requestChallenge(serverURL, fid string) (*challengeResponse, error) {
+func requestChallenge(serverURL, fid string, _ bool) (*challengeResponse, error) {
+	serverURL = normalizeServerURL(serverURL)
 	reqBody := challengeRequest{FID: fid}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshal challenge request: %w", err)
 	}
 
-	resp, err := http.Post(serverURL+"/v1/secrets/challenge", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/v1/secrets/challenge", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create challenge request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request challenge: %w", err)
 	}
@@ -143,4 +169,14 @@ func requestChallenge(serverURL, fid string) (*challengeResponse, error) {
 		return nil, fmt.Errorf("challenge response missing required fields")
 	}
 	return &result, nil
+}
+
+// CheckInstance checks server reachability and whether the instance is registered.
+func CheckInstance(serverURL, fid string, allowInsecure bool) error {
+	serverURL = normalizeServerURL(serverURL)
+	if !strings.HasPrefix(serverURL, "https://") && !allowInsecure {
+		return fmt.Errorf("server URL %q is not HTTPS; use --insecure to allow plaintext HTTP", serverURL)
+	}
+	_, err := requestChallenge(serverURL, fid, allowInsecure)
+	return err
 }

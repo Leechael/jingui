@@ -1,176 +1,174 @@
-# 金匮 (jingui): 产品需求与技术规格文档
+# Jingui: Product Requirements and Technical Specification
 
 ---
 
-## 0. 文档说明
+## 0. Document Notes
 
-**重要提示：** 本文档旨在成为一份完整的、可供开发团队直接使用的技术规格与产品需求文档。它融合了以下三个核心来源的信息：
+**Important:** This document is intended to be a complete technical and product specification that can be used directly by the engineering team. It combines information from three core sources:
 
-1.  **凭证保险库产品设计 (PD)**：定义了核心的客户端/服务器架构、数据模型和 API (源自 `pasted_content_2.txt`)。
-2.  **加密环境变量技术规范**：定义了底层的 ECIES 加密方案和 TEE 内的密钥管理 (源自 `encrypted-env-spec.md`)。
-3.  **1Password CLI 调研**：借鉴了其优秀的开发者体验，特别是 `op run` 命令的设计哲学、秘密引用格式和输出掩蔽机制。
+1. **Credential Vault Product Design (PD)**: core client/server architecture, data model, and APIs.
+2. **Encrypted Environment Variables Specification**: ECIES encryption and TEE key management.
+3. **1Password CLI research**: developer experience ideas, especially `op run`, secret references, and output redaction.
 
-为了确保所有技术细节的完整性和准确性，本文档将**直接引用或完整包含**源文档中的关键技术规格，并在其基础上进行产品化的阐述和扩展。
-
----
-
-## 1. 产品概述
-
-### 1.1. 愿景与定位
-
-**金匮 (jingui)** 是一个为在**可信执行环境 (TEE)** 中运行的 **AI Agent** 设计的零信任 (Zero-Trust) 秘密管理与注入引擎。它的核心使命是，在确保 AI Agent 能够正常使用所需凭证（如 API 密钥、数据库密码）的同时，从根本上杜绝 Agent 自身或其执行的子进程直接窥探、窃取或泄露这些凭证的可能性。
-
-金匮并非一个供人类使用的传统秘密管理工具，而是一个嵌入在机密计算环境中的、自动化的、非交互式的安全组件。
-
-### 1.2. 核心问题
-
-随着 AI Agent 被赋予越来越强大的能力和越来越高的自主性，它们不可避免地需要访问各种敏感凭证来调用外部服务。这带来了前所未有的安全挑战：
-
-1.  **Agent 可信度问题**：我们如何信任一个复杂的、可能是由大语言模型驱动的 Agent 不会恶意地或无意地泄露它所使用的凭证？
-2.  **供应链攻击**：Agent 依赖的第三方库或其调用的外部工具可能存在漏洞，导致凭证被窃取。
-3.  **TEE 环境中的秘密注入**：如何在 TEE 这种高度隔离的环境中，安全、高效地为应用程序提供其运行所需的动态凭证？
-4.  **输出泄露**：Agent 在生成日志、报告或与用户交互时，可能会无意中将敏感的凭证信息打印到标准输出 (stdout)，造成泄露。
-
-### 1.3. 目标用户与环境
-
-- **核心用户**：**AI Agent** 的应用程序/进程。
-- **运行环境**：**机密计算环境**，如 Intel TDX 或 AMD SEV-SNP 所构建的 TEE (Trusted Execution Environment)。
-- **部署者**：AI Agent 平台或应用的开发者与运维团队。
+To preserve technical accuracy, this document directly includes key technical specs from source materials and extends them for productization.
 
 ---
 
-## 2. 系统架构
+## 1. Product Overview
 
-本章节的系统架构设计，直接源自原始的《凭证保险库产品设计》文档，并针对 AI Agent 在 TEE 中运行的场景进行了适配。
+### 1.1 Vision and Positioning
 
-### 2.1. 整体架构图
+**Jingui** is a zero-trust secret management and injection engine designed for **AI Agents** running inside **Trusted Execution Environments (TEE)**.
+Its mission is to let AI agents use required credentials (API keys, DB passwords, etc.) while fundamentally reducing the chance that the agent itself—or any subprocess it runs—can inspect, steal, or leak those credentials.
+
+Jingui is not a traditional human-operated secrets tool. It is an automated, non-interactive security component embedded into confidential-computing environments.
+
+### 1.2 Core Problem
+
+As AI agents become more powerful and autonomous, they must access more sensitive credentials. This creates several security challenges:
+
+1. **Agent trustworthiness**: how do we trust an LLM-driven agent not to intentionally or accidentally leak secrets?
+2. **Supply-chain risk**: third-party dependencies and external tools used by agents may contain vulnerabilities.
+3. **TEE secret delivery**: how to securely and efficiently provide runtime secrets inside strongly isolated TEE environments.
+4. **Output leakage**: agents may accidentally print secrets to stdout/stderr in logs, reports, or user-facing output.
+
+### 1.3 Target Users and Environment
+
+- **Primary user**: AI agent application/process.
+- **Runtime environment**: confidential computing environments such as Intel TDX or AMD SEV-SNP.
+- **Operators/deployers**: AI platform or application engineering/ops teams.
+
+---
+
+## 2. System Architecture
+
+This architecture is derived from the original Credential Vault PD and adapted for AI agents in TEE.
+
+### 2.1 High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      金匮服务器 (Server)                      │
-│                    (中心化凭证保险库与分发)                     │
+│                    Jingui Server                        │
+│          (Central credential vault and dispatcher)      │
 └──────────────────────────┬──────────────────────────────┘
-                           │  加密后的秘密 (ECIES Ciphertext)
+                           │  Encrypted secrets (ECIES ciphertext)
                            ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│                      可信执行环境 (TEE)                         │
+│                     Trusted Execution Environment (TEE)           │
 │                                                                   │
 │  ┌────────────────────┐      ┌────────────────────────────────┐  │
-│  │  金匮客户端 (Client) │      │         AI Agent 应用进程        │  │
-│  │ (解密/注入/监视引擎)  │      │                                │  │
+│  │  Jingui Client     │      │      AI Agent Process         │  │
+│  │ (decrypt/inject/   │      │                                │  │
+│  │  monitor engine)   │      │                                │  │
 │  └──────────┬─────────┘      └───────────────┬────────────┘  │
-│             │ 1. 解密秘密并注入环境变量       │ 2. 启动并监视       │
-│             └───────────────┬───────────────┘                    │
-│                             │                                    │
-│                       ┌─────┴─────┐                              │
-│                       │ stdout 管道 │ (自动掩蔽秘密)               │
-│                       └─────┬─────┘                              │
-│                             │                                    │
+│             │ 1. decrypt and inject env vars  │ 2. launch/monitor│
+│             └───────────────┬─────────────────┘                │
+│                             │                                  │
+│                       ┌─────┴─────┐                            │
+│                       │ stdout pipe │ (automatic redaction)    │
+│                       └─────┬─────┘                            │
+│                             │                                  │
 └─────────────────────────────┼───────────────────────────────────┘
                               ▼
-                         安全的输出 (Safe Output)
+                        Safe Output
 ```
 
-### 2.2. 组件职责
+### 2.2 Component Responsibilities
 
-#### 2.2.1. 金匮服务器 (Server)
+#### 2.2.1 Jingui Server
 
-作为中心化的凭证管理后台，其核心职责包括：
-- **应用管理**：管理 App 及其凭证（如 OAuth `credentials.json`）。
-- **OAuth 授权网关**：为人类用户提供授权接口，以获取和安全存储 `refresh_token`。
-- **TEE 实例注册**：维护一个 TEE 实例身份 (FID) 到其公钥的注册表。
-- **按需加密分发**：根据 TEE 客户端的请求，使用其注册的公钥，通过 ECIES 方案实时加密秘密并分发。
+- **App management**: manage apps and app credentials (for example OAuth `credentials.json`).
+- **OAuth gateway**: provide authorization flow for human users to obtain/store `refresh_token`.
+- **TEE instance registration**: maintain registry mapping FID to public key.
+- **On-demand encrypted dispatch**: encrypt requested secrets using registered TEE public key (ECIES) and return.
 
-#### 2.2.2. 金匮客户端 (Client)
+#### 2.2.2 Jingui Client
 
-这是一个轻量级的、非交互式的 Go 二进制程序，作为 AI Agent 应用的**安全启动器 (Secure Launcher)**。
+A lightweight non-interactive Go binary acting as the agent’s **secure launcher**.
 
-- **唯一入口**: `jingui run <agent_command> [args...]`
-- **核心职责**:
-    1.  **读取配置**: 从 TEE 环境中预置的配置文件（`.appkeys.json`）读取 TEE 实例的私钥。
-    2.  **获取秘密**: 连接金匮服务器，拉取加密的秘密包。
-    3.  **内存解密**: 在内存中使用实例私钥解密秘密。
-    4.  **启动子进程**: 启动 `<agent_command>` 作为其子进程。
-    5.  **注入与隔离**: 将解密后的秘密注入到子进程的环境变量中，并阻止子进程读取自身的环境变量内存空间。
-    6.  **输出监视与掩蔽**: 拦截子进程的 `stdout` 和 `stderr`，实时过滤和替换输出内容中的秘密值。
+- **Single entrypoint**: `jingui run <agent_command> [args...]`
+- **Core responsibilities**:
+  1. Read TEE-provisioned config (`.appkeys.json`) to get instance private key.
+  2. Fetch encrypted secret bundle from server.
+  3. Decrypt secrets in memory.
+  4. Launch `<agent_command>` as subprocess.
+  5. Inject secrets into subprocess env and block subprocess from reading sensitive process env sources.
+  6. Intercept stdout/stderr and redact secret values in real time.
 
 ---
 
-## 3. 客户端 (Client) 设计：借鉴 1Password 的安全启动器
+## 3. Client Design (Inspired by 1Password)
 
-虽然金匮客户端是为非人类的 AI Agent 设计的，但其核心交互模型深受 **1Password CLI** 的启发，特别是其 `op run` 命令。我们旨在为 TEE 中的 Agent 提供与 `op run` 同样无缝、安全的体验。
+Although Jingui targets non-human AI agents, its UX model is inspired by **1Password CLI**, especially `op run`, to provide seamless and secure execution in TEE.
 
-### 3.1. 命令行接口 (CLI)
+### 3.1 CLI Surface
 
-金匮客户端提供一个极其精简的 CLI，其设计直接对标 1Password CLI 的核心功能。
-
-| 命令 | 对标 1Password 命令 | 作用 |
+| Command | 1Password Equivalent | Purpose |
 | :--- | :--- | :--- |
-| `jingui run -- <cmd>` | `op run -- <cmd>` | **核心功能**。启动一个子进程，并将从服务器获取的秘密作为环境变量注入其中。同时，自动掩蔽子进程的 stdout/stderr 输出。 |
-| `jingui read <secret_ref>` | `op read <secret_ref>` | 从服务器读取单个秘密的值并打印到标准输出。主要用于调试或需要将秘密值通过管道传递给其他工具的场景。 |
-| `jingui inject` | `op inject` | 读取一个模板文件 (stdin)，将其中的秘密引用替换为真实的秘密值，然后将结果输出到 stdout。 |
+| `jingui run -- <cmd>` | `op run -- <cmd>` | **Core function**. Launch subprocess, inject fetched secrets as env vars, and redact subprocess stdout/stderr. |
+| `jingui read <secret_ref>` | `op read <secret_ref>` | Read a single secret and print it. Metadata hidden by default; `--show-meta` enables debug FID/Public Key output. |
+| `jingui status` | — | Print current instance info (FID/Public Key) and registration state for troubleshooting. |
+| `jingui inject` | `op inject` | Read template from stdin, replace secret references with real values, output rendered result to stdout. |
 
-### 3.2. 秘密引用格式 (Secret Reference Syntax)
+### 3.2 Secret Reference Syntax
 
-为了在配置文件或代码中引用秘密，我们采用 URI 格式：
+Use URI-style references:
 
-**格式**: `jingui://<service>/<slug_or_email>/<field_name>`
+`jingui://<service>/<slug_or_email>/<field_name>`
 
-- **`jingui://`**: 协议头，标识这是一个金匮秘密引用。
-- **`<service>`**: 外部服务名（如 `gmail`、`github`）。
-- **`<slug_or_email>`**: 服务内命名空间（邮箱、别名、工作空间标识）。
-- **`<field_name>`**: 秘密对象中的具体字段（例如 `token`、`client_id`、`client_secret`）。
+- `jingui://`: protocol prefix.
+- `<service>`: external service name (e.g. `gmail`, `github`).
+- `<slug_or_email>`: namespace within service (email/alias/workspace id).
+- `<field_name>`: field within secret object (`token`, `client_id`, etc).
 
-> 设计约束：`app_id` 不出现在 secret reference 中。`app_id` 属于工作负载身份，由 TEE/RA-TLS 认证链提供。
+> Design rule: `app_id` must not appear in secret references. `app_id` is workload identity provided by TEE/RA-TLS chain.
 
-**示例**:
+Examples:
 
 ```
 GMAIL_TOKEN="jingui://gmail/foo@example.com/token"
 GMAIL_WORK_TOKEN="jingui://gmail/work/token"
 ```
 
-### 3.3. `jingui run` 的工作流程与安全机制
+### 3.3 `jingui run` Workflow and Security
 
-这是客户端的核心，它结合了秘密注入和安全隔离两大功能。
+1. Parse command and args after `jingui run`.
+2. Scan current env for `jingui://` references.
+3. Batch-fetch all references in one server request.
+4. Decrypt in memory and inject resolved values into child env.
+5. Launch child process:
+   - fork child;
+   - before `execve`, apply `ptrace` + `seccomp-bpf` policy to block sensitive sources like `/proc/self/environ`;
+   - redirect child stdout/stderr to pipes.
+6. Redact output in parent process using Aho-Corasick; replace matched secret plaintext with `[REDACTED_BY_JINGUI]`.
 
-1.  **解析命令**: `jingui run` 解析其后的命令和参数。
-2.  **扫描环境变量**: 扫描当前进程的环境变量，查找所有 `jingui://` 格式的秘密引用。
-3.  **批量获取秘密**: 将所有找到的秘密引用聚合，向服务器发起一次批量获取请求。
-4.  **解密与注入**: 在内存中解密所有秘密，并将它们设置到将要创建的子进程的环境变量中。
-5.  **启动与隔离**: 
-    *   `fork` 出子进程。
-    *   在子进程 `execve` **之前**，通过 `ptrace` 和 `seccomp-bpf` 应用安全策略，阻止其访问 `/proc/self/environ` 等敏感资源。
-    *   重定向子进程的 `stdout`/`stderr` 到管道。
-6.  **输出掩蔽**: 父进程从管道读取子进程的输出，使用 Aho-Corasick 算法高效地将所有明文秘密值替换为 `[REDACTED_BY_JINGUI]`。
+### 3.4 Configuration File (`.appkeys.json`)
 
-### 3.4. 配置文件 (`.appkeys.json`)
+The client reads one configuration source injected at TEE boot. **Format and source follow `encrypted-env-spec.md` strictly.**
 
-客户端的唯一配置来源于一个在 TEE 启动时被安全注入的 JSON 文件。**此文件的格式和来源严格遵循《加密环境变量技术规范》**。
-
-- **位置**: TEE 内部的预定路径，如 `/dstack/.host-shared/.appkeys.json`。
-- **核心字段**: `env_crypt_key`，即 TEE 实例的 X25519 私钥（32字节，hex 编码）。
-- **来源**: 由 TEE 的启动器 (Launcher) 或编排系统在创建 TEE 实例时，通过与 KMS 的远程证明过程动态生成并注入。
+- **Path**: predetermined TEE path, e.g. `/dstack/.host-shared/.appkeys.json`
+- **Key field**: `env_crypt_key` (X25519 private key, 32 bytes, hex-encoded)
+- **Source**: produced/injected by TEE launcher or orchestrator during instance creation via KMS + remote attestation
 
 ---
 
-## 4. 服务器端 (Server) 设计
+## 4. Server Design
 
-金匮服务器是整个系统的中央凭证授权和分发中心。**本章节的设计完全基于原始的《凭证保险库产品设计》文档**，确保所有原始设计意图和技术细节都被完整保留。
+Jingui Server is the central authority for credential authorization and distribution. This section keeps original PD intent while aligning terminology.
 
-### 4.1. 核心职责 (修订)
+### 4.1 Core Responsibilities (Revised)
 
-- **工作负载应用管理 (Workload App Management)**：管理 CVM/Agent 工作负载身份。每个工作负载有唯一 `app_id`（来自 dstack 语义），这是权限边界的主键。
-- **服务凭证管理 (Service Secret Management)**：管理用户在外部服务（如 Gmail）上的授权秘密，按 `(app_id, user_id, service, slug)` 组织并加密存储。
-- **TEE 实例注册 (Instance Registration)**：维护 TEE 实例身份到密钥材料的注册表。当前阶段使用 FID+公钥绑定，下一阶段接入 RA-TLS 远程证明。
-- **按需加密分发 (On-Demand Encrypted Dispatch)**：服务器按实例绑定权限解析 secret reference，解密后再使用请求方实例公钥 ECIES 实时加密返回。
-- **静态数据加密 (Encryption at Rest)**：所有持久化敏感信息（服务凭证、OAuth 令牌等）均使用服务器主密钥加密。
+- **Workload app management**: manage CVM/Agent workload identity. Each workload has unique `app_id` (dstack semantics), which is the authorization boundary key.
+- **Service secret management**: manage per-user secrets for external services (e.g. Gmail), organized by `(app_id, user_id, service, slug)`.
+- **TEE instance registration**: maintain instance identity and key material. Current phase uses FID+public key binding; next phase introduces RA-TLS attestation.
+- **On-demand encrypted dispatch**: resolve secret references under instance-bound identity; decrypt at rest data and re-encrypt to requester public key via ECIES.
+- **Encryption at rest**: all persisted sensitive data uses server master key encryption.
 
-### 4.2. 数据模型 (Database Schema)
+### 4.2 Data Model (Database Schema)
 
-> 说明：本节已按语义修正。`app_id` 表示 CVM/Agent 工作负载身份，不再表示外部服务（如 gmail app）。
+> Semantic correction: `app_id` represents workload identity (CVM/Agent), not external service application id.
 
-#### 4.2.1. `apps` (工作负载应用)
+#### 4.2.1 `apps` (workload applications)
 
 ```sql
 CREATE TABLE apps (
@@ -181,7 +179,7 @@ CREATE TABLE apps (
 );
 ```
 
-#### 4.2.2. `user_secrets` (服务凭证)
+#### 4.2.2 `user_secrets` (service credentials)
 
 ```sql
 CREATE TABLE user_secrets (
@@ -196,7 +194,7 @@ CREATE TABLE user_secrets (
 );
 ```
 
-#### 4.2.3. `tee_instances` (TEE 实例注册表)
+#### 4.2.3 `tee_instances` (TEE instance registry)
 
 ```sql
 CREATE TABLE tee_instances (
@@ -208,7 +206,7 @@ CREATE TABLE tee_instances (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMPTZ,
 
-    -- 预留：RA-TLS / attestation metadata（下一阶段启用）
+    -- Reserved for next phase: RA-TLS / attestation metadata
     attestation_mode TEXT,
     tee_type TEXT,
     mrtd BYTEA,
@@ -222,49 +220,51 @@ CREATE TABLE tee_instances (
 );
 ```
 
-### 4.3. API 规范 (gRPC & RESTful)
+### 4.3 API Specification (gRPC & REST)
 
-服务器应同时提供 gRPC 和 RESTful API 以满足不同场景的需求。**以下 API 设计直接采纳自原始 PD 设计**。
+The server should expose both gRPC and REST APIs.
 
-| Service (gRPC) | Method (RPC) | Path (REST) | 调用者 | 说明 |
+| Service (gRPC) | Method (RPC) | Path (REST) | Caller | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `AppService` | `RegisterApp` | `POST /v1/apps` | 人类用户 (管理员) | 注册工作负载应用（CVM/Agent app_id）。 |
-| `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | 人类用户 (管理员) | 写入某个 app/user 下的服务凭证（service+slug）。 |
-| `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE 客户端** | **核心接口**。TEE 实例基于绑定身份批量拉取其所需的加密凭证包。 |
-| `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / 运维脚本 | 注册 TEE 实例并绑定到目标 app/user。 |
+| `AppService` | `RegisterApp` | `POST /v1/apps` | Human admin | Register workload app (`app_id`). |
+| `AppService` | `UpdateApp` | `PUT /v1/apps/{app_id}` | Human admin | Update existing app metadata/credentials. |
+| `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | Human admin | Write service secret for app/user (`service+slug`). |
+| `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE client** | **Core API**. TEE instance batch-fetches encrypted credentials based on bound identity. |
+| `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / ops script | Register TEE instance and bind app/user identity. |
 
-#### 核心 API 流程详解: `FetchSecrets`
+#### Core API flow: `FetchSecrets`
 
-1.  **请求 (Request)**: TEE 客户端发起 `POST /v1/secrets/fetch` 请求。请求体包含：
-    ```json
-    {
-      "fid": "...", // TEE 实例的指纹 ID
-      "secret_references": ["jingui://...", "jingui://..."] // 需要获取的秘密引用列表
-    }
-    ```
-2.  **验证实例 (Instance Verification)**: 服务器通过 `fid` 在 `tee_instances` 表中查找记录。如果找不到，返回 404 Not Found。
-3.  **解析引用 (Reference Parsing)**: 服务器遍历 `secret_references`，解析出 `service`, `slug`, `field_name`。
-4.  **权限检查 (Authorization)**: 先根据 `fid` 找到绑定身份 `(bound_app_id, bound_user_id)`；再在该身份命名空间下解析引用。
-5.  **批量获取与加密 (Batch Fetch & Encrypt)**:
-    a.  对每个合法引用，在 `user_secrets` 中按 `(app_id, user_id, service, slug)` 读取 `secret_encrypted`。
-    b.  用服务器主密钥解密得到明文 secret object，并提取 `field_name` 对应值。
-    c.  使用 `fid` 对应 `public_key` 通过 **ECIES** 加密后返回。
-6.  **返回加密包 (Response)**: 将所有加密后的秘密组织成一个 map 返回给客户端。
-    ```json
-    {
-      "secrets": {
-        "jingui://gdrive/user1/token": "<ECIES_encrypted_blob_1>",
-        "jingui://github/user1/token": "<ECIES_encrypted_blob_2>"
-      }
-    }
-    ```
-_The following is a direct and complete inclusion of the encryption specification to ensure all technical details are preserved for developers._
+1. **Request**: TEE client sends:
+   ```json
+   {
+     "fid": "...",
+     "secret_references": ["jingui://...", "jingui://..."]
+   }
+   ```
+2. **Instance verification**: lookup `fid` in `tee_instances`; return 404 if not found.
+3. **Reference parsing**: parse each secret reference into `service`, `slug`, `field_name`.
+4. **Authorization**: resolve bound identity `(bound_app_id, bound_user_id)` by `fid`; authorize references under that namespace.
+5. **Batch fetch and encrypt**:
+   - read `secret_encrypted` from `user_secrets` using `(app_id, user_id, service, slug)`;
+   - decrypt using server master key and extract `field_name`;
+   - ECIES-encrypt with instance public key.
+6. **Response**:
+   ```json
+   {
+     "secrets": {
+       "jingui://gdrive/user1/token": "<ECIES_encrypted_blob_1>",
+       "jingui://github/user1/token": "<ECIES_encrypted_blob_2>"
+     }
+   }
+   ```
 
-## 5. 加密与安全模型
+_The following is directly included to preserve full encryption details for implementers._
 
-### 5.1. 加密协议技术规格 (源自 `encrypted-env-spec.md`)
+## 5. Encryption and Security Model
 
-**为了确保实现的绝对准确性，本节完整地、不加修改地包含了《加密环境变量技术规范》的全部内容。**
+### 5.1 Encryption Protocol Specification (from `encrypted-env-spec.md`)
+
+**To ensure implementation accuracy, this section includes the full technical content without modifications.**
 
 ---
 
@@ -382,7 +382,7 @@ _The following is a direct and complete inclusion of the encryption specificatio
 >                         ciphertext = ciphertext,
 >                         aad        = None
 >                     )
-> 6. result         = JSON.decode(plaintext)  // → {"env": [...]}
+> 6. result         = JSON.decode(plaintext)  // → {"env": [...]} 
 > ```
 > 
 > ### 3.5 Algorithm Parameters Summary
@@ -510,90 +510,86 @@ _The following is a direct and complete inclusion of the encryption specificatio
 
 ---
 
-### 5.2. 安全模型与威胁分析
+### 5.2 Security Model and Threat Analysis
 
-在上述加密协议的基础上，金匮的安全模型依赖于以下核心假设和对策：
+On top of the encryption protocol above, Jingui’s security posture depends on these assumptions and mitigations:
 
-| 威胁场景 | 攻击描述 | 金匮的对策 |
+| Threat Scenario | Description | Jingui Mitigation |
 | :--- | :--- | :--- |
-| **网络窃听** | 攻击者在 TEE 客户端和服务器之间嗅探网络流量。 | 全链路强制 HTTPS/TLS。更重要的是，获取到的秘密数据包本身也是用 TEE 实例的公钥加密的，攻击者没有对应的私钥无法解密。 |
-| **服务器被完全攻破** | 攻击者获得了服务器的 root 权限和数据库的完整访问权。 | **核心防御**：服务器不存储 TEE 实例的私钥。攻击者无法伪造 TEE 实例的身份，也无法解密已经分发出去的秘密包。 |
-| **TEE 内存泄露** | 攻击者利用 CPU 漏洞（如 Spectre/Meltdown）或 TEE 本身的漏洞，试图读取 TEE 内部内存。 | 这是 TEE 技术的根本挑战。金匮依赖于底层 TEE 实现（如 Intel TDX）提供的内存加密和完整性保护来缓解此风险。金匮自身能做的是确保明文秘密在内存中的停留时间尽可能短。 |
-| **AI Agent 恶意行为** | Agent 自身（如一个被污染的 LLM）试图在代码逻辑中将获取到的环境变量值通过网络外传。 | **核心防御**：金匮的**进程级秘密隔离**和**自动化输出掩蔽**机制是为此设计的。Agent 无法直接读取环境变量的明文，其所有 stdout/stderr 输出都会被过滤。 |
-| **TEE 启动配置被篡改** | 攻击者在 TEE 启动前，篡改了将被注入的 `.appkeys.json` 文件。 | **核心防御**：依赖于**远程证明**。`.appkeys.json` 的内容是由 KMS 在验证了 TEE 的真实性后颁发的。任何对 TEE 启动镜像或配置的篡改都会改变证明报告的度量值，导致 KMS 拒绝颁发密钥。 |
+| **Network sniffing** | Attacker intercepts traffic between TEE client and server. | Force HTTPS/TLS end-to-end. Secret bundles are additionally encrypted to TEE instance public key; without private key attacker cannot decrypt. |
+| **Full server compromise** | Attacker gets root access to server and full database dump. | **Core defense**: server does not store TEE private keys. Attacker cannot impersonate TEE instance or decrypt already dispatched bundles. |
+| **TEE memory exposure** | CPU/TEE vulnerabilities (e.g. Spectre/Meltdown class) attempt memory extraction. | This is a fundamental TEE challenge. Jingui relies on platform protections (e.g. Intel TDX memory encryption/integrity) and minimizes plaintext secret residency in memory. |
+| **Malicious AI agent behavior** | Agent (or poisoned model logic) tries to exfiltrate env values over network/logs. | **Core defense**: process-level isolation + automatic stdout/stderr redaction. Agent cannot trivially read raw env sources; output is filtered. |
+| **TEE boot config tampering** | Attacker tampers with `.appkeys.json` before TEE boot. | **Core defense**: remote attestation. `.appkeys.json` is issued by KMS only after TEE authenticity verification. Tampering changes measured state and causes key issuance refusal. |
 
 ---
 
-## 6. BDD (行为驱动开发) 场景描述
+## 6. BDD Scenarios
 
-本章节以 BDD 的形式，描述金匮客户端在 TEE 环境中的核心行为，确保其安全机制和功能符合设计预期。
+### 6.1 Feature: `jingui run` — Safe Secret Injection for AI Agent
 
-### 6.1. 功能: `jingui run` - 安全地为 AI Agent 注入并使用秘密
+`jingui run` must decrypt/inject secrets correctly and block common leakage paths.
 
-**为了让 AI Agent 能够在不泄露秘密的前提下使用凭证，`jingui run` 必须能够正确地解密、注入秘密，并阻止任何形式的泄露。**
+#### Scenario 1: Successful Secret Usage
 
-#### 场景 1: 成功的秘密使用
-
-- **假设 (Given)** 一个 TEE 实例已经通过远程证明获得了包含有效私钥的 `.appkeys.json` 文件。
-- **并且 (And)** 金匮服务器上存储着一个 API 密钥，其值为 `sk_live_123456789`，对应的秘密引用为 `jingui://app/secret/key`。
-- **并且 (And)** 一个 Python 脚本 `agent.py` 被设计为从环境变量 `API_KEY` 中读取密钥并发起 API 调用。
-- **当 (When)** TEE 启动器在设置了 `API_KEY="jingui://app/secret/key"` 的环境下执行命令：
+- **Given** a TEE instance has valid `.appkeys.json` from attestation flow.
+- **And** server stores API key `sk_live_123456789` for reference `jingui://app/secret/key`.
+- **And** a Python script `agent.py` reads `API_KEY` and calls external API.
+- **When** launcher runs:
   ```bash
   jingui run -- python agent.py
   ```
-- **那么 (Then)** `agent.py` 脚本应该能够成功读取到 `API_KEY` 的值 `sk_live_123456789` 并完成 API 调用。
-- **并且 (And)** `jingui run` 的标准输出中不应包含任何 `sk_live_123456789` 的明文字符串。
+- **Then** `agent.py` can use `API_KEY=sk_live_123456789` to complete API call.
+- **And** `jingui run` stdout does not reveal plaintext `sk_live_123456789`.
 
-#### 场景 2: 尝试通过标准输出泄露秘密
+#### Scenario 2: Attempted stdout Leak
 
-- **假设 (Given)** 与“成功的秘密使用”场景相同的设置。
-- **并且 (And)** `agent.py` 脚本中包含恶意代码，试图打印环境变量：
+- **Given** same setup as Scenario 1.
+- **And** `agent.py` includes malicious print logic:
   ```python
   import os
   api_key = os.getenv("API_KEY")
   print(f"Attempting to leak the key: {api_key}")
   ```
-- **当 (When)** TEE 启动器执行命令：
+- **When** launcher runs:
   ```bash
   jingui run -- python agent.py
   ```
-- **那么 (Then)** `jingui run` 的最终标准输出应该是被掩蔽后的内容：
+- **Then** final stdout is redacted:
   ```
   Attempting to leak the key: [REDACTED_BY_JINGUI]
   ```
 
-#### 场景 3: 尝试通过进程内省泄露秘密
+#### Scenario 3: Attempted Process Introspection Leak
 
-- **假设 (Given)** 与“成功的秘密使用”场景相同的设置。
-- **并且 (And)** `agent.py` 脚本中包含更高级的恶意代码，试图读取 `/proc/self/environ` 文件：
+- **Given** same setup as Scenario 1.
+- **And** `agent.py` tries to read `/proc/self/environ`:
   ```python
   with open("/proc/self/environ", "r") as f:
       print(f.read())
   ```
-- **当 (When)** TEE 启动器执行命令：
+- **When** launcher runs:
   ```bash
   jingui run -- python agent.py
   ```
-- **那么 (Then)** `agent.py` 进程应该被立即终止。
-- **并且 (And)** `jingui run` 应该报告一个安全违规错误，例如 `Error: Agent process attempted a forbidden system call (open /proc/self/environ)`。
+- **Then** process is terminated immediately.
+- **And** `jingui run` reports a security violation, e.g. `forbidden system call (open /proc/self/environ)`.
 
-### 6.2. 功能: `jingui inject` - 安全地渲染模板
+### 6.2 Feature: `jingui inject` — Safe Template Rendering
 
-**为了支持基于模板的配置文件生成，`jingui inject` 必须能够安全地将秘密引用替换为真实值。**
+#### Scenario 4: Successful Template Render
 
-#### 场景 4: 成功渲染模板
-
-- **假设 (Given)** 与“成功的秘密使用”场景相同的设置。
-- **并且 (And)** 一个名为 `config.yaml.tpl` 的模板文件内容如下：
+- **Given** same setup as Scenario 1.
+- **And** template file `config.yaml.tpl`:
   ```yaml
   database:
     password: {{ jingui://db/prod/password }}
   ```
-- **当 (When)** TEE 启动器执行命令：
+- **When** launcher runs:
   ```bash
   cat config.yaml.tpl | jingui inject > config.yaml
   ```
-- **那么 (Then)** 生成的 `config.yaml` 文件内容应该是：
+- **Then** generated `config.yaml` is:
   ```yaml
   database:
     password: <the_actual_db_password>
@@ -601,93 +597,91 @@ _The following is a direct and complete inclusion of the encryption specificatio
 
 ---
 
-## 7. 部署与运维
+## 7. Deployment and Operations
 
-### 7.1. 服务器部署
+### 7.1 Server Deployment
 
-金匮服务器作为一个标准的 Go 后端应用，可以被灵活地部署在企业内部的基础设施上。
+Jingui server is a standard Go backend service.
 
-- **推荐方式**: 使用官方提供的 Docker 镜像，并通过 Kubernetes 或 Docker Compose 进行编排。
-- **数据库**: 生产环境必须使用外部的 PostgreSQL 数据库。
-- **配置**: 通过环境变量或配置文件来提供数据库连接字符串、服务器主密钥等。
+- **Recommended**: official Docker image with Kubernetes or Docker Compose orchestration.
+- **Database**: production must use external PostgreSQL.
+- **Configuration**: provide DB DSN, master key, and related settings via env vars or config file.
 
-### 7.2. 客户端部署
+### 7.2 Client Deployment
 
-金匮客户端不是一个由用户“安装”的软件，而是被**构建在 TEE 基础镜像**中的一个核心组件。
+Jingui client is not typically “installed by users”; it should be baked into the TEE base image.
 
-- **镜像构建**: 在构建 TEE 的“黄金镜像”时，`jingui` 的二进制文件必须被包含在内，并放置在系统的 `PATH` 路径下（如 `/usr/local/bin/jingui`）。
-- **不可变性**: 一旦镜像被构建和度量，`jingui` 客户端就成为该 TEE 环境不可变的一部分。任何对其的修改都会改变 TEE 的证明报告，导致远程证明失败。
-- **入口点**: TEE 镜像的启动脚本或容器的 `ENTRYPOINT` 应被配置为 `jingui run`，由它来启动真正的 AI Agent 应用。
+- **Image build**: include `jingui` binary in golden image under PATH (e.g. `/usr/local/bin/jingui`).
+- **Immutability**: once image is measured, client becomes part of attested state. Any modification changes measurement and should fail attestation/key issuance.
+- **Entrypoint**: image startup script / container `ENTRYPOINT` should call `jingui run`, which then starts the real agent command.
 
-### 7.3. 当前实现状态与纠偏决策（2026-02-24）
+### 7.3 Current Status and Correction Decisions (2026-02-24)
 
-> 本节记录已达成共识的设计纠偏，作为后续重构基线。
+This section captures agreed baseline corrections.
 
-**问题确认**
-- 现实现把 `app_id` 误用为外部服务应用标识（如 gmail-app），与目标不一致。
-- 目标语义中，`app_id` 应属于 CVM/Agent 工作负载身份，并由 TEE 认证链（RA-TLS）提供。
+**Confirmed issues**
+- Current implementation incorrectly treats `app_id` as external service app identifier (e.g. gmail-app).
+- Target semantics: `app_id` should represent CVM/Agent workload identity from TEE attestation chain.
 
-**已确认的设计修正**
-- Secret reference 统一为：`jingui://<service>/<slug_or_email>/<field_name>`。
-- `app_id` 不再出现在 ref 中；ref 仅表示“服务命名空间 + 字段选择”。
-- `app_id` 作为 workload identity，在服务端权限边界中使用（由实例绑定与后续 attestation 共同确定）。
+**Confirmed design changes**
+- Secret reference unified to: `jingui://<service>/<slug_or_email>/<field_name>`.
+- `app_id` removed from secret references.
+- `app_id` remains server-side authorization boundary (determined by instance binding and later attestation).
 
-**执行策略（一次到位）**
-1. 先做数据库与 CRUD 重构并跑通 server-client 主链路。
-2. migration 一步到位（无旧字段兼容、无 v2 API）。
-3. RA-TLS 作为 next phase 引入，但本阶段预留抽象与字段，避免下阶段 breaking change。
-
----
-
-## 8. 实现路线图 (Roadmap)
-
-### Phase 1（当前）：数据模型重构 + CRUD 先行
-
-- **目标**: 修正 `app_id` 语义并保持 server-client 主链路可测试。
-- **内容**:
-  - 一次性 schema 重构（无兼容层、无 v2 API）。
-  - Secret reference 改为 `jingui://<service>/<slug>/<field>`。
-  - admin CRUD 与 fetch/read/run 按新语义联通。
-
-### Phase 2：RA-TLS 身份绑定接入
-
-- **目标**: 将 workload identity 与 TEE 认证链绑定，替换纯 FID 信任。
-- **内容**:
-  - 引入 RA-TLS 证书验证（依赖 dstack/go-ratls 与 dcap-qvl Go bindings）。
-  - 从 attestation 上下文解析 workload identity（app_id）并执行授权匹配。
-  - 保持 secret reference 语法不变，避免对客户端配置造成 breaking change。
-
-### Phase 3：生产化能力
-
-- **目标**: 在稳定身份模型基础上补齐运维与可靠性能力。
-- **内容**:
-  - 审计日志、PostgreSQL、HA 部署。
-  - KMS/远程证明自动注册链路。
-  - 文档与策略（轮换、失效、合规）完善。
+**Execution strategy (single-step migration)**
+1. Refactor DB/schema/CRUD first and keep server-client primary flow operational.
+2. One-shot migration (no old-field compatibility, no v2 API).
+3. Introduce RA-TLS in next phase, while reserving abstraction/fields now to avoid future breaking change.
 
 ---
 
-## 9. 开放问题 (源自原始 PD)
+## 8. Roadmap
 
-**以下开放问题直接采纳自原始 PD 设计，需要在详细设计阶段进行决策。**
+### Phase 1 (current): Data Model Refactor + CRUD First
 
-| # | 问题 | 影响范围 | 建议答案 |
+- **Goal**: correct `app_id` semantics while keeping server-client integration testable.
+- **Scope**:
+  - one-shot schema migration (no compatibility layer, no v2 API),
+  - secret reference becomes `jingui://<service>/<slug>/<field>`,
+  - align admin CRUD and fetch/read/run with new semantics.
+
+### Phase 2: RA-TLS Identity Binding
+
+- **Goal**: bind workload identity to attestation chain and replace pure FID trust.
+- **Scope**:
+  - RA-TLS certificate verification (dstack/go-ratls + dcap-qvl Go bindings),
+  - parse workload identity (`app_id`) from attestation context for authorization,
+  - keep secret-reference syntax unchanged to avoid client-config breakage.
+
+### Phase 3: Production Hardening
+
+- **Goal**: complete reliability/operations/security controls on top of stable identity model.
+- **Scope**:
+  - audit logs, PostgreSQL production rollout, HA deployment,
+  - KMS + remote-attestation auto-registration pipeline,
+  - complete policy documentation (rotation/revocation/compliance).
+
+---
+
+## 9. Open Questions (from original PD)
+
+| # | Question | Impact | Suggested Answer |
 | :--- | :--- | :--- | :--- |
-| 1 | 一个客户端 (FID) 是否可以绑定多个用户，还是严格一对一？ | 数据模型、权限控制 | **建议一对一**。一个 FID 对应一个 TEE 实例，一个实例绑定到一个特定的用户授权。这简化了权限模型。 |
-| 2 | 客户端是否需要缓存解密后的秘密？ | 客户端性能与安全 | **不建议持久化缓存**。仅支持在 `jingui run` 单次运行期间的内存缓存。 |
-| 3 | 是否需要支持 Google 以外的 OAuth 服务？ | OAuth 网关设计 | **建议支持**。设计一个可插拔的 OAuth Provider 接口。 |
-| 4 | Server 端是否需要定期验证 `refresh_token` 的有效性？ | 凭证管理策略 | **建议支持**。实现一个后台任务，定期验证并标记失效的凭证。 |
-| 5 | 是否需要支持秘密的版本控制和历史记录？ | 审计与恢复 | **可选**。如果实现，应只保留最近的几个版本，并且历史版本的访问也应被审计。 |
-| 6 | 如何处理秘密的分享和协作？ | 权限模型 | **建议基于 App 的权限**。用户对某个 App 有权限，就能访问该 App 下的所有秘密。 |
-| 7 | JWT 由谁签发？是金匮服务器自身，还是外部 IdP？ | 认证架构 | **建议金匮服务器自身签发**（MVP 阶段）。 |
-| 8 | 是否需要支持 MFA (多因素认证)？ | 安全强度 | **建议支持**（针对人类管理员）。 |
+| 1 | Can one client (FID) bind multiple users, or strictly one-to-one? | Data model, auth | **Recommend one-to-one**: one FID per TEE instance bound to one user authorization context. |
+| 2 | Should client cache decrypted secrets? | Performance vs security | **No persistent cache**. Only in-memory cache per `jingui run` invocation. |
+| 3 | Should OAuth providers beyond Google be supported? | OAuth gateway design | **Yes**. Define pluggable OAuth provider interface. |
+| 4 | Should server periodically validate refresh-token validity? | Credential lifecycle | **Yes**. Add background validation and invalidation tagging. |
+| 5 | Need secret versioning/history? | Audit/recovery | **Optional**. If enabled, keep limited recent versions and audit access. |
+| 6 | How to support sharing/collaboration? | Permission model | **App-based permission model**. Access granted by app-level authorization. |
+| 7 | Who issues JWTs, Jingui or external IdP? | Auth architecture | **Jingui-issued in MVP**. |
+| 8 | Is MFA required? | Security posture | **Yes**, for human administrators. |
 
 ---
 
-## 10. 参考资源
+## 10. References
 
-- **加密环境变量技术规范** (源自 `encrypted-env-spec.md`)
-- **1Password CLI Documentation**: (https://developer.1password.com/docs/cli/)
-- **Linux ptrace, seccomp-bpf Man Pages**
-- **Aho-Corasick 算法**: (https://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_algorithm)
-- **Intel TDX / AMD SEV-SNP Whitepapers**
+- Encrypted Environment Variables specification (`encrypted-env-spec.md`)
+- 1Password CLI docs: https://developer.1password.com/docs/cli/
+- Linux `ptrace`, `seccomp-bpf` man pages
+- Aho-Corasick algorithm: https://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_algorithm
+- Intel TDX / AMD SEV-SNP whitepapers

@@ -1,3 +1,14 @@
+## v0.1.1 (2026-02-25)
+
+- feat: add status, runtime read policy, URL normalization, and openapi endpoint
+
+## v0.1.0 (2026-02-24)
+
+- refactor: start secret-ref migration to service/slug semantics
+- docs: align ref semantics with workload identity and add refactor plan
+- docs: sync API/PRD status and normalize changelog
+- Add end-to-end manual test script
+
 # Changelog
 
 ## Unreleased
@@ -7,6 +18,14 @@
 - docs: update PRD roadmap for one-shot migration + CRUD-first + RA-TLS next phase
 - docs: add refactor execution tracker in `todo.md`
 - docs: add manual test guide warning about pending reference-format migration
+- feat(cli): add `jingui status` for instance registration checks
+- feat(cli): default appkeys path is `/dstack/.host-shared/.appkeys.json`
+- feat(cli): normalize server URLs to handle trailing `/`
+- feat(server): add runtime user-level debug-read policy endpoints
+- feat(server): tag requests with command type and enforce read policy
+- feat(server): add `GET /` -> `ok` and `GET /openapi.json`
+- docs: add `docs/openapi.json`
+- docs: document `PUT /v1/apps/:app_id` update path and `jingui read --show-meta`
 - chore: normalize changelog structure
 
 ## v0.0.3 (2026-02-13)

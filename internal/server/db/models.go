@@ -31,3 +31,11 @@ type TEEInstance struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
 }
+
+// DebugPolicy controls whether a user may run jingui read in runtime.
+type DebugPolicy struct {
+	AppID          string    `json:"app_id"`
+	UserID         string    `json:"user_id"`
+	AllowReadDebug bool      `json:"allow_read_debug"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
