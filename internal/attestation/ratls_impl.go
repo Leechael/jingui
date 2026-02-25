@@ -5,14 +5,18 @@ package attestation
 import (
 	"context"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
+	"strings"
 
 	dstackratls "github.com/Dstack-TEE/dstack/sdk/go/ratls"
 )
 
 // RATLSVerifier verifies attestation bundles using RA-TLS certificate extensions.
 type RATLSVerifier struct{}
+
+var oidRATLSAppID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 62397, 1, 3}
 
 func NewRATLSVerifier() *RATLSVerifier {
 	return &RATLSVerifier{}
@@ -32,8 +36,16 @@ func (v *RATLSVerifier) Verify(_ context.Context, b Bundle) (VerifiedIdentity, e
 		return VerifiedIdentity{}, fmt.Errorf("RA-TLS certificate verification failed: %w", err)
 	}
 
+	extractedAppID := extractAppIDFromCert(cert)
+	if extractedAppID != "" && strings.TrimSpace(b.AppID) != "" && extractedAppID != strings.TrimSpace(b.AppID) {
+		return VerifiedIdentity{}, fmt.Errorf("attestation app_id mismatch between certificate and bundle")
+	}
+	if extractedAppID == "" {
+		extractedAppID = strings.TrimSpace(b.AppID)
+	}
+
 	return VerifiedIdentity{
-		AppID:      b.AppID,
+		AppID:      extractedAppID,
 		InstanceID: b.Instance,
 		DeviceID:   b.DeviceID,
 	}, nil

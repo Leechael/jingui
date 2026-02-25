@@ -22,6 +22,10 @@ make clean build
 bin/jingui --version        # → jingui ...
 bin/jingui-server -v        # → jingui-server ...
 
+# Build RA-TLS enabled binaries (required for strict attestation verification)
+go build -tags ratls -o bin/jingui ./cmd/jingui
+go build -tags ratls -o bin/jingui-server ./cmd/jingui-server
+
 # Cross-compile linux/amd64 client for TDX
 make build-client-linux-amd64
 file bin/linux-amd64/jingui  # → ELF 64-bit LSB executable, x86-64 ...

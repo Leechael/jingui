@@ -70,15 +70,62 @@
       "post": {
         "summary": "Issue PoP challenge",
         "description": "In strict RA-TLS mode, request must include client_attestation and response includes server_attestation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fid": { "type": "string" },
+                  "client_attestation": {
+                    "type": "object",
+                    "properties": {
+                      "app_cert": { "type": "string" },
+                      "tcb_info": { "type": "string" },
+                      "app_id": { "type": "string" },
+                      "instance_id": { "type": "string" },
+                      "device_id": { "type": "string" }
+                    }
+                  }
+                },
+                "required": ["fid"]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Challenge" },
+          "200": { "description": "Challenge (+server_attestation in strict mode)" },
           "401": { "description": "Attestation verification failed / required" },
           "404": { "description": "Instance not found" }
         }
       }
     },
     "/v1/secrets/fetch": {
-      "post": { "summary": "Verify challenge and fetch encrypted secrets", "responses": { "200": { "description": "Encrypted secrets" }, "401": { "description": "Challenge verification failed" } } }
+      "post": {
+        "summary": "Verify challenge and fetch encrypted secrets",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fid": { "type": "string" },
+                  "secret_references": { "type": "array", "items": { "type": "string" } },
+                  "challenge_id": { "type": "string" },
+                  "challenge_response": { "type": "string", "description": "base64" }
+                },
+                "required": ["fid", "secret_references", "challenge_id", "challenge_response"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Encrypted secrets" },
+          "401": { "description": "Challenge/RA verification failed" }
+        }
+      }
     }
   }
 }

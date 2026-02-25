@@ -177,10 +177,29 @@ func collectLocalAttestation() (attestation.Bundle, error) {
 	return collector.Collect(context.Background())
 }
 
+func expectedServerAppID() string {
+	return strings.TrimSpace(os.Getenv("JINGUI_RATLS_EXPECT_SERVER_APP_ID"))
+}
+
 func verifyServerAttestation(bundle attestation.Bundle) error {
+	if strings.TrimSpace(bundle.AppID) == "" {
+		return fmt.Errorf("server_attestation.app_id is required in strict RA-TLS mode")
+	}
 	verifier := attestation.NewRATLSVerifier()
-	_, err := verifier.Verify(context.Background(), bundle)
-	return err
+	identity, err := verifier.Verify(context.Background(), bundle)
+	if err != nil {
+		return err
+	}
+	expected := expectedServerAppID()
+	if expected != "" {
+		if identity.AppID == "" {
+			return fmt.Errorf("server attestation did not provide verifiable app_id")
+		}
+		if identity.AppID != expected {
+			return fmt.Errorf("server attestation app_id mismatch: expected %q got %q", expected, identity.AppID)
+		}
+	}
+	return nil
 }
 
 func requestChallenge(serverURL, fid string, _ bool, clientAtt *attestation.Bundle) (*challengeResponse, error) {

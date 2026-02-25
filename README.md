@@ -96,6 +96,10 @@ Lines with `jingui://` URIs are fetched and decrypted; plain values pass through
 
 `jingui read` also supports `--show-meta` to print FID/Public Key to stderr when debugging.
 
+RA-TLS strict client knobs:
+- `JINGUI_RATLS_STRICT` (default `true`)
+- `JINGUI_RATLS_EXPECT_SERVER_APP_ID` (optional pin; when set, server attestation app_id must match)
+
 ## Secret Reference Format
 
 ```

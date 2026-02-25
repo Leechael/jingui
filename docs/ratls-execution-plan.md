@@ -1,6 +1,6 @@
 # RA-TLS Strict Execution Plan
 
-Status: draft-in-progress
+Status: implemented (strict path)
 Branch: `feat-ratls-strict`
 
 ## Goal
@@ -26,27 +26,31 @@ Enable strict, bidirectional RA validation in Jingui secret handshake flow while
 
 ## Incremental Work Items
 
-### W1 - Protocol/Types (in progress)
-- Add attestation bundle types
-- Extend challenge request/response payloads
-- Add strict mode config (`JINGUI_RATLS_STRICT`, default true)
+### W1 - Protocol/Types ✅
+- [x] Add attestation bundle types
+- [x] Extend challenge request/response payloads
+- [x] Add strict mode config (`JINGUI_RATLS_STRICT`, default true)
 
-### W2 - Client Collector
-- Integrate dstack go SDK `Info()` collector
-- Build `client_attestation` payload from `app_cert` + `tcb_info`
+### W2 - Client Collector ✅
+- [x] Integrate dstack go SDK `Info()` collector
+- [x] Build `client_attestation` payload from `app_cert` + `tcb_info`
 
-### W3 - Server Verifier
-- Integrate dcap-qvl and RA cert/quote parser
-- Verify identity/policy extraction
-- Persist challenge verification state in memory store
+### W3 - Server Verifier ✅
+- [x] Integrate dcap-qvl and RA cert/quote parser (`-tags ratls`)
+- [x] Verify strict flow gates and challenge RA state
+- [x] Persist challenge verification state in memory store
+- [x] Extract/bind app_id from verified attestation certificate extensions (with bundle consistency checks)
 
-### W4 - Client-side Server RA Verify
-- Verify `server_attestation` before fetch
-- Fail closed in strict mode
+### W4 - Client-side Server RA Verify ✅
+- [x] Verify `server_attestation` before fetch
+- [x] Fail closed in strict mode
+- [x] Optional app_id pin via `JINGUI_RATLS_EXPECT_SERVER_APP_ID`
 
-### W5 - Tests + Docs
-- Unit and integration tests for positive/negative paths
-- Update README / OpenAPI / manual guide
+### W5 - Tests + Docs ✅
+- [x] Add strict negative tests (missing/mismatch attestation)
+- [x] Add strict flow state test (challenge->fetch gate)
+- [x] Update README / OpenAPI / manual guide
+- [x] Keep default CI path green without local dcap runtime via ratls build tags/stub split
 
 ## Notes
 

@@ -20,11 +20,11 @@
 - [ ] Update `scripts/manual-test.sh` and `docs/manual-test-guide.md` examples.
 
 ## Phase 2 (next): RA-TLS identity binding
-- [ ] Add verifier abstraction (`Noop` now, `RATLS` impl next).
-- [ ] Add attestation metadata fields/structures needed by future enforcement.
-- [ ] Integrate RA-TLS cert verification (dstack PR #512).
-- [ ] Integrate DCAP Go bindings (dcap-qvl PR #113).
-- [ ] Bind resolved workload identity (app_id) from attestation to policy checks.
+- [x] Add verifier abstraction (`Noop` now, `RATLS` impl next).
+- [x] Add attestation metadata fields/structures needed by future enforcement.
+- [x] Integrate RA-TLS cert verification (dstack PR #512).
+- [x] Integrate DCAP Go bindings (dcap-qvl PR #113).
+- [x] Bind resolved workload identity (app_id) from attestation to policy checks.
 
 ## Phase 3: productionization
 - [ ] PostgreSQL backend.
