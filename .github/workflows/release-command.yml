@@ -163,21 +163,17 @@ jobs:
           echo "Resolved version: ${NEW_VERSION}"
 
       # ── Cross-compile ────────────────────────────────────────────────
-      - name: Cross-compile binaries
+      - name: Build linux/amd64 binaries
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           LDFLAGS="-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}"
 
-          for GOOS in linux darwin; do
-            for GOARCH in amd64 arm64; do
-              echo "Building ${GOOS}/${GOARCH}..."
-              GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "${LDFLAGS}" \
-                -o "dist/jingui-${GOOS}-${GOARCH}" ./cmd/jingui
-              GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "${LDFLAGS}" \
-                -o "dist/jingui-server-${GOOS}-${GOARCH}" ./cmd/jingui-server
-            done
-          done
+          echo "Building linux/amd64..."
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" \
+            -o "dist/jingui-linux-amd64" ./cmd/jingui
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" \
+            -o "dist/jingui-server-linux-amd64" ./cmd/jingui-server
 
           echo "Built binaries:"
           ls -lh dist/
@@ -220,10 +216,8 @@ jobs:
             const version = '${{ steps.version.outputs.version }}';
             const releaseUrl = '${{ steps.gh_release.outputs.url }}';
             const assets = [
-              'jingui-linux-amd64', 'jingui-linux-arm64',
-              'jingui-darwin-amd64', 'jingui-darwin-arm64',
-              'jingui-server-linux-amd64', 'jingui-server-linux-arm64',
-              'jingui-server-darwin-amd64', 'jingui-server-darwin-arm64',
+              'jingui-linux-amd64',
+              'jingui-server-linux-amd64',
             ];
             const assetList = assets.map(a => `- \`${a}\``).join('\n');
             const body = [
@@ -323,7 +317,7 @@ jobs:
         with:
           context: .
           target: server
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-server.outputs.tags }}
           labels: ${{ steps.meta-server.outputs.labels }}
@@ -345,7 +339,7 @@ jobs:
         with:
           context: .
           target: client
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-client.outputs.tags }}
           labels: ${{ steps.meta-client.outputs.labels }}
