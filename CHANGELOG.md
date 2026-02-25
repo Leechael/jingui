@@ -1,3 +1,16 @@
+## v0.1.2-alpha.1 (2026-02-25)
+
+- ratls: complete strict flow hardening, policy pinning, tests and docs
+- ratls: require attestation app_id in strict challenge mode
+- ratls: enforce RA-verified challenge state before fetch
+- ratls: wire strict bidirectional attestation into challenge flow
+- ratls: scaffold strict attestation handshake types and config
+- docs: align with current API and remove init command surface
+- docs: translate docs to English
+- docs: update app update flow and read metadata behavior
+- ux: improve app-duplicate error, add app update endpoint, and hide read metadata by default
+- ci: restrict builds/releases to linux-amd64 only
+
 ## v0.1.1 (2026-02-25)
 
 - feat: add status, runtime read policy, URL normalization, and openapi endpoint
