@@ -35,7 +35,7 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 
 # ── Server image ───────────────────────────────────────────────────────
 FROM alpine:3.21 AS server
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates libgcc
 COPY --from=builder /out/jingui-server /usr/local/bin/jingui-server
 
 ENV JINGUI_MASTER_KEY=""
@@ -51,7 +51,7 @@ ENTRYPOINT ["jingui-server"]
 
 # ── Client image ───────────────────────────────────────────────────────
 FROM alpine:3.21 AS client
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates libgcc
 COPY --from=builder /out/jingui /usr/local/bin/jingui
 
 ENV JINGUI_SERVER_URL=""
