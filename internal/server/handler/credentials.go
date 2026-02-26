@@ -49,7 +49,7 @@ func HandlePutCredentials(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 		}
 
 		secret := &db.UserSecret{
-			AppID:           appID,
+			Vault:           appID,
 			UserID:          req.UserID,
 			SecretEncrypted: encrypted,
 		}

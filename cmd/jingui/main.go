@@ -45,9 +45,10 @@ func main() {
 	)
 
 	rootCmd := &cobra.Command{
-		Use:     "jingui",
-		Short:   "Jingui (金匮) - secure secret injection for TEE environments",
-		Version: version.Version,
+		Use:          "jingui",
+		Short:        "Jingui (金匮) - secure secret injection for TEE environments",
+		Version:      version.Version,
+		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Name() == "completion" {
 				return nil

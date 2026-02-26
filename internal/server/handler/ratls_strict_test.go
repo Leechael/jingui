@@ -20,7 +20,7 @@ func newStrictChallengeRouter(t *testing.T) *gin.Engine {
 	t.Cleanup(func() { _ = store.Close() })
 
 	app := &db.App{
-		AppID:                "a1",
+		Vault:                "a1",
 		Name:                 "app",
 		ServiceType:          "gmail",
 		RequiredScopes:       "",
@@ -29,10 +29,10 @@ func newStrictChallengeRouter(t *testing.T) *gin.Engine {
 	if err := store.CreateApp(app); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := store.UpsertUserSecret(&db.UserSecret{AppID: "a1", UserID: "u1", SecretEncrypted: []byte{1}}); err != nil {
+	if err := store.UpsertUserSecret(&db.UserSecret{Vault: "a1", UserID: "u1", SecretEncrypted: []byte{1}}); err != nil {
 		t.Fatalf("upsert user secret: %v", err)
 	}
-	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), BoundAppID: "a1", BoundUserID: "u1"}); err != nil {
+	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), BoundVault: "a1", BoundAttestationAppID: "a1", BoundUserID: "u1"}); err != nil {
 		t.Fatalf("register instance: %v", err)
 	}
 

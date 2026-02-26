@@ -19,7 +19,7 @@ func (s *Store) CreateApp(app *App) error {
 	_, err := s.db.Exec(
 		`INSERT INTO apps (app_id, name, service_type, required_scopes, credentials_encrypted)
 		 VALUES (?, ?, ?, ?, ?)`,
-		app.AppID, app.Name, app.ServiceType, app.RequiredScopes, app.CredentialsEncrypted,
+		app.Vault, app.Name, app.ServiceType, app.RequiredScopes, app.CredentialsEncrypted,
 	)
 	if err != nil {
 		var sqliteErr *sqlite.Error
@@ -37,7 +37,7 @@ func (s *Store) GetApp(appID string) (*App, error) {
 	err := s.db.QueryRow(
 		`SELECT app_id, name, service_type, required_scopes, credentials_encrypted, created_at
 		 FROM apps WHERE app_id = ?`, appID,
-	).Scan(&app.AppID, &app.Name, &app.ServiceType, &app.RequiredScopes, &app.CredentialsEncrypted, &app.CreatedAt)
+	).Scan(&app.Vault, &app.Name, &app.ServiceType, &app.RequiredScopes, &app.CredentialsEncrypted, &app.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -54,7 +54,7 @@ func (s *Store) UpdateApp(app *App) (bool, error) {
 		`UPDATE apps
 		 SET name = ?, service_type = ?, required_scopes = ?, credentials_encrypted = ?
 		 WHERE app_id = ?`,
-		app.Name, app.ServiceType, app.RequiredScopes, app.CredentialsEncrypted, app.AppID,
+		app.Name, app.ServiceType, app.RequiredScopes, app.CredentialsEncrypted, app.Vault,
 	)
 	if err != nil {
 		return false, fmt.Errorf("update app: %w", err)
@@ -76,7 +76,7 @@ func (s *Store) ListApps() ([]App, error) {
 	var apps []App
 	for rows.Next() {
 		var a App
-		if err := rows.Scan(&a.AppID, &a.Name, &a.ServiceType, &a.RequiredScopes, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.Vault, &a.Name, &a.ServiceType, &a.RequiredScopes, &a.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan app: %w", err)
 		}
 		apps = append(apps, a)

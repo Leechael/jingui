@@ -149,7 +149,7 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 
 		var serverAtt *attestation.Bundle
 		if strict {
-			logx.Debugf("ratls.server.challenge strict=true fid=%s bound_app_id=%s", req.FID, inst.BoundAppID)
+			logx.Debugf("ratls.server.challenge strict=true fid=%s bound_vault=%s bound_attestation_app_id=%s", req.FID, inst.BoundVault, inst.BoundAttestationAppID)
 			if verifier == nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "attestation verifier is not configured"})
 				return
@@ -164,8 +164,13 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "client_attestation.app_id is required in strict RA-TLS mode"})
 				return
 			}
-			if req.ClientAttestation.AppID != inst.BoundAppID {
-				logx.Warnf("ratls.server.challenge rejected: request app_id mismatch fid=%s attested_app_id=%s bound_app_id=%s", req.FID, req.ClientAttestation.AppID, inst.BoundAppID)
+			if strings.TrimSpace(inst.BoundAttestationAppID) == "" {
+				logx.Warnf("ratls.server.challenge rejected: instance missing bound_attestation_app_id fid=%s", req.FID)
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "instance is missing bound_attestation_app_id"})
+				return
+			}
+			if req.ClientAttestation.AppID != inst.BoundAttestationAppID {
+				logx.Warnf("ratls.server.challenge rejected: request app_id mismatch fid=%s attested_app_id=%s bound_attestation_app_id=%s", req.FID, req.ClientAttestation.AppID, inst.BoundAttestationAppID)
 				c.JSON(http.StatusForbidden, gin.H{"error": "client attestation app_id mismatch"})
 				return
 			}
@@ -176,8 +181,8 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "client RA verification failed: " + err.Error()})
 				return
 			}
-			if identity.AppID != "" && identity.AppID != inst.BoundAppID {
-				logx.Warnf("ratls.server.challenge rejected: verified app_id mismatch fid=%s verified_app_id=%s bound_app_id=%s", req.FID, identity.AppID, inst.BoundAppID)
+			if identity.AppID != "" && identity.AppID != inst.BoundAttestationAppID {
+				logx.Warnf("ratls.server.challenge rejected: verified app_id mismatch fid=%s verified_app_id=%s bound_attestation_app_id=%s", req.FID, identity.AppID, inst.BoundAttestationAppID)
 				c.JSON(http.StatusForbidden, gin.H{"error": "client RA app_id mismatch"})
 				return
 			}
@@ -267,7 +272,7 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 
 		command := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Jingui-Command")))
 		if command == "read" {
-			policy, err := store.GetDebugPolicy(inst.BoundAppID, inst.BoundUserID)
+			policy, err := store.GetDebugPolicy(inst.BoundVault, inst.BoundUserID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load debug policy"})
 				return
@@ -287,14 +292,14 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 				return
 			}
 
-			// Validate: ref's app_id must match instance's bound_app_id
-			if ref.AppID != inst.BoundAppID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "app_id mismatch for reference: " + refStr})
+			// Validate: ref's vault (service segment) must match instance's bound_vault.
+			if ref.Service != inst.BoundVault {
+				c.JSON(http.StatusForbidden, gin.H{"error": "vault mismatch for reference: " + refStr})
 				return
 			}
 
-			// Validate: ref's secret_name must match instance's bound_user_id
-			if ref.SecretName != inst.BoundUserID {
+			// Validate: ref's user segment must match instance's bound_user_id.
+			if ref.Slug != inst.BoundUserID {
 				c.JSON(http.StatusForbidden, gin.H{"error": "user_id mismatch for reference: " + refStr})
 				return
 			}
@@ -303,9 +308,9 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 
 			switch ref.FieldName {
 			case "client_id", "client_secret":
-				plainValue, err = extractAppField(store, masterKey, ref.AppID, ref.FieldName)
+				plainValue, err = extractAppField(store, masterKey, ref.Service, ref.FieldName)
 			case "refresh_token":
-				plainValue, err = extractUserSecret(store, masterKey, ref.AppID, ref.SecretName, ref.FieldName)
+				plainValue, err = extractUserSecret(store, masterKey, ref.Service, ref.Slug, ref.FieldName)
 			default:
 				c.JSON(http.StatusBadRequest, gin.H{"error": "unknown field: " + ref.FieldName})
 				return
@@ -330,13 +335,13 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 	}
 }
 
-func extractAppField(store *db.Store, masterKey [32]byte, appID, fieldName string) ([]byte, error) {
-	app, err := store.GetApp(appID)
+func extractAppField(store *db.Store, masterKey [32]byte, vault, fieldName string) ([]byte, error) {
+	app, err := store.GetApp(vault)
 	if err != nil {
 		return nil, err
 	}
 	if app == nil {
-		return nil, fmt.Errorf("app not found: %s", appID)
+		return nil, fmt.Errorf("vault not found: %s", vault)
 	}
 
 	credJSON, err := crypto.DecryptAtRest(masterKey, app.CredentialsEncrypted)
@@ -359,13 +364,13 @@ func extractAppField(store *db.Store, masterKey [32]byte, appID, fieldName strin
 	}
 }
 
-func extractUserSecret(store *db.Store, masterKey [32]byte, appID, userID, fieldName string) ([]byte, error) {
-	us, err := store.GetUserSecret(appID, userID)
+func extractUserSecret(store *db.Store, masterKey [32]byte, vault, userID, fieldName string) ([]byte, error) {
+	us, err := store.GetUserSecret(vault, userID)
 	if err != nil {
 		return nil, err
 	}
 	if us == nil {
-		return nil, fmt.Errorf("secret not found for %s/%s", appID, userID)
+		return nil, fmt.Errorf("secret not found for %s/%s", vault, userID)
 	}
 
 	secretJSON, err := crypto.DecryptAtRest(masterKey, us.SecretEncrypted)

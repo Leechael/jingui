@@ -30,7 +30,7 @@ func (s *Store) GetDebugPolicy(appID, userID string) (*DebugPolicy, error) {
 	err := s.db.QueryRow(
 		`SELECT app_id, user_id, allow_read_debug, updated_at
 		 FROM debug_policies WHERE app_id = ? AND user_id = ?`, appID, userID,
-	).Scan(&p.AppID, &p.UserID, &allowInt, &p.UpdatedAt)
+	).Scan(&p.Vault, &p.UserID, &allowInt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

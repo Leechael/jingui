@@ -68,6 +68,7 @@ func (s *Store) migrate() error {
 				fid TEXT PRIMARY KEY,
 				public_key BLOB NOT NULL UNIQUE,
 				bound_app_id TEXT NOT NULL,
+				bound_attestation_app_id TEXT NOT NULL,
 				bound_user_id TEXT NOT NULL,
 				label TEXT NOT NULL DEFAULT '',
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -91,6 +92,7 @@ func (s *Store) migrate() error {
 
 	// Upgrade legacy tee_instances schema (from older versions) to include:
 	//   - UNIQUE(public_key)
+	//   - bound_attestation_app_id column
 	//   - FOREIGN KEY(bound_app_id, bound_user_id) -> user_secrets(app_id, user_id)
 	if err := s.upgradeTEEInstancesSchema(); err != nil {
 		return err
@@ -109,9 +111,10 @@ func (s *Store) upgradeTEEInstancesSchema() error {
 
 	schema := strings.ToLower(strings.Join(strings.Fields(tableSQL), " "))
 	hasPubKeyUnique := strings.Contains(schema, "public_key blob not null unique")
+	hasAttestationID := strings.Contains(schema, "bound_attestation_app_id text not null")
 	hasCompositeFK := strings.Contains(schema, "foreign key (bound_app_id, bound_user_id) references user_secrets(app_id, user_id)")
 
-	if hasPubKeyUnique && hasCompositeFK {
+	if hasPubKeyUnique && hasAttestationID && hasCompositeFK {
 		return nil
 	}
 
@@ -125,6 +128,7 @@ func (s *Store) upgradeTEEInstancesSchema() error {
 		fid TEXT PRIMARY KEY,
 		public_key BLOB NOT NULL UNIQUE,
 		bound_app_id TEXT NOT NULL,
+		bound_attestation_app_id TEXT NOT NULL,
 		bound_user_id TEXT NOT NULL,
 		label TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -135,8 +139,8 @@ func (s *Store) upgradeTEEInstancesSchema() error {
 	}
 
 	if _, err := tx.Exec(`INSERT INTO tee_instances_new
-		(fid, public_key, bound_app_id, bound_user_id, label, created_at, last_used_at)
-		SELECT fid, public_key, bound_app_id, bound_user_id, label, created_at, last_used_at
+		(fid, public_key, bound_app_id, bound_attestation_app_id, bound_user_id, label, created_at, last_used_at)
+		SELECT fid, public_key, bound_app_id, '', bound_user_id, label, created_at, last_used_at
 		FROM tee_instances`); err != nil {
 		return fmt.Errorf("copy tee_instances data: %w", err)
 	}

@@ -11,10 +11,11 @@ import (
 )
 
 type registerInstanceRequest struct {
-	PublicKey   string `json:"public_key" binding:"required"`
-	BoundAppID  string `json:"bound_app_id" binding:"required"`
-	BoundUserID string `json:"bound_user_id" binding:"required"`
-	Label       string `json:"label"`
+	PublicKey             string `json:"public_key" binding:"required"`
+	BoundVault            string `json:"bound_vault" binding:"required"`
+	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
+	BoundUserID           string `json:"bound_user_id" binding:"required"`
+	Label                 string `json:"label"`
 }
 
 // HandleRegisterInstance handles POST /v1/instances.
@@ -37,11 +38,12 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 		fid := hex.EncodeToString(h[:])
 
 		inst := &db.TEEInstance{
-			FID:         fid,
-			PublicKey:   pubKeyBytes,
-			BoundAppID:  req.BoundAppID,
-			BoundUserID: req.BoundUserID,
-			Label:       req.Label,
+			FID:                   fid,
+			PublicKey:             pubKeyBytes,
+			BoundVault:            req.BoundVault,
+			BoundAttestationAppID: req.BoundAttestationAppID,
+			BoundUserID:           req.BoundUserID,
+			Label:                 req.Label,
 		}
 
 		if err := store.RegisterInstance(inst); err != nil {
@@ -52,7 +54,7 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 				c.JSON(http.StatusConflict, gin.H{"error": "another instance with this public key already exists"})
 			case db.ErrInstanceAppUserNotFound:
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf("app %q with authorized user %q not found; register the app and complete OAuth authorization first", req.BoundAppID, req.BoundUserID),
+					"error": fmt.Sprintf("vault %q with authorized user %q not found; register the vault and complete OAuth authorization first", req.BoundVault, req.BoundUserID),
 				})
 			default:
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

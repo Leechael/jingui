@@ -10,7 +10,7 @@ import (
 )
 
 type createAppRequest struct {
-	AppID           string          `json:"app_id" binding:"required"`
+	Vault           string          `json:"vault" binding:"required"`
 	Name            string          `json:"name" binding:"required"`
 	ServiceType     string          `json:"service_type" binding:"required"`
 	RequiredScopes  string          `json:"required_scopes"`
@@ -48,7 +48,7 @@ func HandleCreateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 		}
 
 		app := &db.App{
-			AppID:                req.AppID,
+			Vault:                req.Vault,
 			Name:                 req.Name,
 			ServiceType:          req.ServiceType,
 			RequiredScopes:       req.RequiredScopes,
@@ -58,8 +58,8 @@ func HandleCreateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 		if err := store.CreateApp(app); err != nil {
 			if err == db.ErrAppDuplicate {
 				c.JSON(http.StatusConflict, gin.H{
-					"error": "app_id already exists",
-					"hint":  "use PUT /v1/apps/:app_id to update app metadata/credentials",
+					"error": "vault already exists",
+					"hint":  "use PUT /v1/apps/:app_id to update vault metadata/credentials",
 				})
 				return
 			}
@@ -67,11 +67,11 @@ func HandleCreateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusCreated, gin.H{"app_id": req.AppID, "status": "created"})
+		c.JSON(http.StatusCreated, gin.H{"vault": req.Vault, "status": "created"})
 	}
 }
 
-// HandleUpdateApp handles PUT /v1/apps/:app_id.
+// HandleUpdateApp handles PUT /v1/apps/:vault.
 func HandleUpdateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		appID := c.Param("app_id")
@@ -82,8 +82,8 @@ func HandleUpdateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		if req.AppID != "" && req.AppID != appID {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "app_id in body must match path"})
+		if req.Vault != "" && req.Vault != appID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "vault in body must match path"})
 			return
 		}
 
@@ -107,7 +107,7 @@ func HandleUpdateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 		}
 
 		ok, err := store.UpdateApp(&db.App{
-			AppID:                appID,
+			Vault:                appID,
 			Name:                 req.Name,
 			ServiceType:          req.ServiceType,
 			RequiredScopes:       req.RequiredScopes,
@@ -122,6 +122,6 @@ func HandleUpdateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"app_id": appID, "status": "updated"})
+		c.JSON(http.StatusOK, gin.H{"vault": appID, "status": "updated"})
 	}
 }

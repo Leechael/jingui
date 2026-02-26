@@ -220,7 +220,7 @@ func HandleOAuthCallback(store *db.Store, masterKey [32]byte, baseURL string) gi
 		}
 
 		secret := &db.UserSecret{
-			AppID:           appID,
+			Vault:           appID,
 			UserID:          email,
 			SecretEncrypted: encrypted,
 		}
@@ -330,7 +330,7 @@ func HandleDeviceAuth(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			}
 
 			secret := &db.UserSecret{
-				AppID:           appID,
+				Vault:           appID,
 				UserID:          email,
 				SecretEncrypted: encrypted,
 			}

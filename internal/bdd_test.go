@@ -90,7 +90,7 @@ func (b *bddContext) theServerIsRunning() error {
 
 func (b *bddContext) anAppExistsWithCredentials(appID, serviceType string, credJSON *godog.DocString) error {
 	body, _ := json.Marshal(map[string]interface{}{
-		"app_id":           appID,
+		"vault":            appID,
 		"name":             appID,
 		"service_type":     serviceType,
 		"credentials_json": json.RawMessage(credJSON.Content),
@@ -117,7 +117,7 @@ func (b *bddContext) userHasSecretsForApp(userID, appID string, table *godog.Tab
 		return err
 	}
 	return b.store.UpsertUserSecret(&db.UserSecret{
-		AppID:           appID,
+		Vault:           appID,
 		UserID:          userID,
 		SecretEncrypted: encrypted,
 	})
@@ -133,10 +133,11 @@ func (b *bddContext) aTEEInstanceIsRegistered(appID, userID string) error {
 	fid := hex.EncodeToString(h[:])
 
 	body, _ := json.Marshal(map[string]string{
-		"public_key":    pubHex,
-		"bound_app_id":  appID,
-		"bound_user_id": userID,
-		"label":         "bdd-tee",
+		"public_key":               pubHex,
+		"bound_vault":              appID,
+		"bound_attestation_app_id": appID,
+		"bound_user_id":            userID,
+		"label":                    "bdd-tee",
 	})
 	resp, err := adminRequest("POST", b.ts.URL+"/v1/instances", body)
 	if err != nil {
@@ -156,7 +157,7 @@ func (b *bddContext) aTEEInstanceIsRegistered(appID, userID string) error {
 
 func (b *bddContext) iRegisterAnApp(appID, serviceType string, credJSON *godog.DocString) error {
 	body, _ := json.Marshal(map[string]interface{}{
-		"app_id":           appID,
+		"vault":            appID,
 		"name":             appID,
 		"service_type":     serviceType,
 		"credentials_json": json.RawMessage(credJSON.Content),

@@ -13,23 +13,25 @@ import (
 // instanceView is used to serialize TEE instances with hex-encoded public keys
 // instead of the default base64 encoding for []byte.
 type instanceView struct {
-	FID         string  `json:"fid"`
-	PublicKey   string  `json:"public_key"`
-	BoundAppID  string  `json:"bound_app_id"`
-	BoundUserID string  `json:"bound_user_id"`
-	Label       string  `json:"label"`
-	CreatedAt   string  `json:"created_at"`
-	LastUsedAt  *string `json:"last_used_at"`
+	FID                   string  `json:"fid"`
+	PublicKey             string  `json:"public_key"`
+	BoundVault            string  `json:"bound_vault"`
+	BoundAttestationAppID string  `json:"bound_attestation_app_id"`
+	BoundUserID           string  `json:"bound_user_id"`
+	Label                 string  `json:"label"`
+	CreatedAt             string  `json:"created_at"`
+	LastUsedAt            *string `json:"last_used_at"`
 }
 
 func newInstanceView(inst *db.TEEInstance) instanceView {
 	v := instanceView{
-		FID:         inst.FID,
-		PublicKey:   hex.EncodeToString(inst.PublicKey),
-		BoundAppID:  inst.BoundAppID,
-		BoundUserID: inst.BoundUserID,
-		Label:       inst.Label,
-		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		FID:                   inst.FID,
+		PublicKey:             hex.EncodeToString(inst.PublicKey),
+		BoundVault:            inst.BoundVault,
+		BoundAttestationAppID: inst.BoundAttestationAppID,
+		BoundUserID:           inst.BoundUserID,
+		Label:                 inst.Label,
+		CreatedAt:             inst.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 	if inst.LastUsedAt != nil {
 		s := inst.LastUsedAt.Format("2006-01-02T15:04:05Z")
@@ -56,10 +58,10 @@ func HandleListApps(store *db.Store) gin.HandlerFunc {
 // HandleGetApp handles GET /v1/apps/:app_id.
 func HandleGetApp(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Param("app_id")
-		app, err := store.GetApp(appID)
+		vault := c.Param("app_id")
+		app, err := store.GetApp(vault)
 		if err != nil {
-			log.Printf("GetApp(%q) error: %v", appID, err)
+			log.Printf("GetApp(%q) error: %v", vault, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve app"})
 			return
 		}
@@ -68,7 +70,7 @@ func HandleGetApp(store *db.Store) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"app_id":          app.AppID,
+			"vault":           app.Vault,
 			"name":            app.Name,
 			"service_type":    app.ServiceType,
 			"required_scopes": app.RequiredScopes,
@@ -81,22 +83,22 @@ func HandleGetApp(store *db.Store) gin.HandlerFunc {
 // HandleDeleteApp handles DELETE /v1/apps/:app_id.
 func HandleDeleteApp(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Param("app_id")
+		vault := c.Param("app_id")
 		cascade := c.Query("cascade") == "true"
 
 		var deleted bool
 		var err error
 		if cascade {
-			deleted, err = store.DeleteAppCascade(appID)
+			deleted, err = store.DeleteAppCascade(vault)
 		} else {
-			deleted, err = store.DeleteApp(appID)
+			deleted, err = store.DeleteApp(vault)
 		}
 
 		if err != nil {
 			if errors.Is(err, db.ErrAppHasDependents) {
 				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			} else {
-				log.Printf("DeleteApp(%q) error: %v", appID, err)
+				log.Printf("DeleteApp(%q) error: %v", vault, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete app"})
 			}
 			return
@@ -105,7 +107,7 @@ func HandleDeleteApp(store *db.Store) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "deleted", "app_id": appID})
+		c.JSON(http.StatusOK, gin.H{"status": "deleted", "vault": vault})
 	}
 }
 
@@ -169,12 +171,12 @@ func HandleDeleteInstance(store *db.Store) gin.HandlerFunc {
 // HandleListUserSecrets handles GET /v1/user-secrets.
 func HandleListUserSecrets(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Query("app_id")
+		vault := c.Query("app_id")
 
 		var secrets []db.UserSecret
 		var err error
-		if appID != "" {
-			secrets, err = store.ListUserSecretsByApp(appID)
+		if vault != "" {
+			secrets, err = store.ListUserSecretsByApp(vault)
 		} else {
 			secrets, err = store.ListUserSecrets()
 		}
@@ -191,11 +193,11 @@ func HandleListUserSecrets(store *db.Store) gin.HandlerFunc {
 // HandleGetUserSecret handles GET /v1/user-secrets/:app_id/:user_id.
 func HandleGetUserSecret(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Param("app_id")
+		vault := c.Param("app_id")
 		userID := c.Param("user_id")
-		secret, err := store.GetUserSecret(appID, userID)
+		secret, err := store.GetUserSecret(vault, userID)
 		if err != nil {
-			log.Printf("GetUserSecret(%q, %q) error: %v", appID, userID, err)
+			log.Printf("GetUserSecret(%q, %q) error: %v", vault, userID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve user secret"})
 			return
 		}
@@ -204,7 +206,7 @@ func HandleGetUserSecret(store *db.Store) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"app_id":     secret.AppID,
+			"vault":      secret.Vault,
 			"user_id":    secret.UserID,
 			"has_secret": len(secret.SecretEncrypted) > 0,
 			"created_at": secret.CreatedAt,
@@ -216,23 +218,23 @@ func HandleGetUserSecret(store *db.Store) gin.HandlerFunc {
 // HandleDeleteUserSecret handles DELETE /v1/user-secrets/:app_id/:user_id.
 func HandleDeleteUserSecret(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Param("app_id")
+		vault := c.Param("app_id")
 		userID := c.Param("user_id")
 		cascade := c.Query("cascade") == "true"
 
 		var deleted bool
 		var err error
 		if cascade {
-			deleted, err = store.DeleteUserSecretCascade(appID, userID)
+			deleted, err = store.DeleteUserSecretCascade(vault, userID)
 		} else {
-			deleted, err = store.DeleteUserSecret(appID, userID)
+			deleted, err = store.DeleteUserSecret(vault, userID)
 		}
 
 		if err != nil {
 			if errors.Is(err, db.ErrSecretHasDependents) {
 				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			} else {
-				log.Printf("DeleteUserSecret(%q, %q) error: %v", appID, userID, err)
+				log.Printf("DeleteUserSecret(%q, %q) error: %v", vault, userID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user secret"})
 			}
 			return
@@ -241,23 +243,23 @@ func HandleDeleteUserSecret(store *db.Store) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user secret not found"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "deleted", "app_id": appID, "user_id": userID})
+		c.JSON(http.StatusOK, gin.H{"status": "deleted", "vault": vault, "user_id": userID})
 	}
 }
 
 // HandleGetDebugPolicy handles GET /v1/debug-policy/:app_id/:user_id.
 func HandleGetDebugPolicy(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Param("app_id")
+		vault := c.Param("app_id")
 		userID := c.Param("user_id")
-		p, err := store.GetDebugPolicy(appID, userID)
+		p, err := store.GetDebugPolicy(vault, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get debug policy"})
 			return
 		}
 		if p == nil {
 			// default allow=true if no policy row exists
-			c.JSON(http.StatusOK, gin.H{"app_id": appID, "user_id": userID, "allow_read_debug": true, "source": "default"})
+			c.JSON(http.StatusOK, gin.H{"vault": vault, "user_id": userID, "allow_read_debug": true, "source": "default"})
 			return
 		}
 		c.JSON(http.StatusOK, p)
@@ -271,17 +273,17 @@ type putDebugPolicyRequest struct {
 // HandlePutDebugPolicy handles PUT /v1/debug-policy/:app_id/:user_id.
 func HandlePutDebugPolicy(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		appID := c.Param("app_id")
+		vault := c.Param("app_id")
 		userID := c.Param("user_id")
 		var req putDebugPolicyRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := store.UpsertDebugPolicy(appID, userID, req.AllowReadDebug); err != nil {
+		if err := store.UpsertDebugPolicy(vault, userID, req.AllowReadDebug); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update debug policy"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "updated", "app_id": appID, "user_id": userID, "allow_read_debug": req.AllowReadDebug})
+		c.JSON(http.StatusOK, gin.H{"status": "updated", "vault": vault, "user_id": userID, "allow_read_debug": req.AllowReadDebug})
 	}
 }

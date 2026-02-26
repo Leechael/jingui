@@ -17,7 +17,7 @@ func (s *Store) UpsertUserSecret(secret *UserSecret) error {
 		 ON CONFLICT(app_id, user_id) DO UPDATE SET
 		   secret_encrypted = excluded.secret_encrypted,
 		   updated_at = CURRENT_TIMESTAMP`,
-		secret.AppID, secret.UserID, secret.SecretEncrypted,
+		secret.Vault, secret.UserID, secret.SecretEncrypted,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert user secret: %w", err)
@@ -31,7 +31,7 @@ func (s *Store) GetUserSecret(appID, userID string) (*UserSecret, error) {
 	err := s.db.QueryRow(
 		`SELECT app_id, user_id, secret_encrypted, created_at, updated_at
 		 FROM user_secrets WHERE app_id = ? AND user_id = ?`, appID, userID,
-	).Scan(&us.AppID, &us.UserID, &us.SecretEncrypted, &us.CreatedAt, &us.UpdatedAt)
+	).Scan(&us.Vault, &us.UserID, &us.SecretEncrypted, &us.CreatedAt, &us.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -54,7 +54,7 @@ func (s *Store) ListUserSecrets() ([]UserSecret, error) {
 	var secrets []UserSecret
 	for rows.Next() {
 		var us UserSecret
-		if err := rows.Scan(&us.AppID, &us.UserID, &us.CreatedAt, &us.UpdatedAt); err != nil {
+		if err := rows.Scan(&us.Vault, &us.UserID, &us.CreatedAt, &us.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan user secret: %w", err)
 		}
 		secrets = append(secrets, us)
@@ -76,7 +76,7 @@ func (s *Store) ListUserSecretsByApp(appID string) ([]UserSecret, error) {
 	var secrets []UserSecret
 	for rows.Next() {
 		var us UserSecret
-		if err := rows.Scan(&us.AppID, &us.UserID, &us.CreatedAt, &us.UpdatedAt); err != nil {
+		if err := rows.Scan(&us.Vault, &us.UserID, &us.CreatedAt, &us.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan user secret: %w", err)
 		}
 		secrets = append(secrets, us)

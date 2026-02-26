@@ -44,11 +44,11 @@ func setupStrictFlow(t *testing.T) (*gin.Engine, [32]byte, string) {
 		masterKey[i] = byte(i + 1)
 	}
 
-	app := &db.App{AppID: "a1", Name: "app", ServiceType: "gmail", CredentialsEncrypted: []byte("x")}
+	app := &db.App{Vault: "a1", Name: "app", ServiceType: "gmail", CredentialsEncrypted: []byte("x")}
 	if err := store.CreateApp(app); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := store.UpsertUserSecret(&db.UserSecret{AppID: "a1", UserID: "u1", SecretEncrypted: []byte("x")}); err != nil {
+	if err := store.UpsertUserSecret(&db.UserSecret{Vault: "a1", UserID: "u1", SecretEncrypted: []byte("x")}); err != nil {
 		t.Fatalf("upsert user secret: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func setupStrictFlow(t *testing.T) (*gin.Engine, [32]byte, string) {
 	}
 	h := sha1.Sum(pub)
 	fid := hex.EncodeToString(h[:])
-	if err := store.RegisterInstance(&db.TEEInstance{FID: fid, PublicKey: pub, BoundAppID: "a1", BoundUserID: "u1"}); err != nil {
+	if err := store.RegisterInstance(&db.TEEInstance{FID: fid, PublicKey: pub, BoundVault: "a1", BoundAttestationAppID: "a1", BoundUserID: "u1"}); err != nil {
 		t.Fatalf("register instance: %v", err)
 	}
 

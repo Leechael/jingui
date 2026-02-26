@@ -18,7 +18,7 @@ func TestAppCRUD(t *testing.T) {
 	s := newTestStore(t)
 
 	app := &App{
-		AppID:                "test-app",
+		Vault:                "test-app",
 		Name:                 "Test App",
 		ServiceType:          "gmail",
 		RequiredScopes:       "https://mail.google.com/",
@@ -36,7 +36,7 @@ func TestAppCRUD(t *testing.T) {
 	if got == nil {
 		t.Fatal("GetApp returned nil")
 	}
-	if got.AppID != "test-app" || got.Name != "Test App" {
+	if got.Vault != "test-app" || got.Name != "Test App" {
 		t.Errorf("got app %+v", got)
 	}
 
@@ -63,13 +63,13 @@ func TestUserSecretCRUD(t *testing.T) {
 
 	// Need app first (foreign key)
 	app := &App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	}
 	s.CreateApp(app)
 
 	secret := &UserSecret{
-		AppID:           "app1",
+		Vault:           "app1",
 		UserID:          "user@example.com",
 		SecretEncrypted: []byte("encrypted-token"),
 	}
@@ -108,14 +108,14 @@ func TestTEEInstanceCRUD(t *testing.T) {
 	s := newTestStore(t)
 
 	app := &App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	}
 	s.CreateApp(app)
 
 	// tee_instances now references user_secrets(app_id, user_id)
 	if err := s.UpsertUserSecret(&UserSecret{
-		AppID:           "app1",
+		Vault:           "app1",
 		UserID:          "user@example.com",
 		SecretEncrypted: []byte("token"),
 	}); err != nil {
@@ -123,11 +123,12 @@ func TestTEEInstanceCRUD(t *testing.T) {
 	}
 
 	inst := &TEEInstance{
-		FID:         "abc123",
-		PublicKey:   []byte("pubkey-32-bytes-placeholder-here"),
-		BoundAppID:  "app1",
-		BoundUserID: "user@example.com",
-		Label:       "test-instance",
+		FID:                   "abc123",
+		PublicKey:             []byte("pubkey-32-bytes-placeholder-here"),
+		BoundVault:            "app1",
+		BoundAttestationAppID: "app1",
+		BoundUserID:           "user@example.com",
+		Label:                 "test-instance",
 	}
 
 	if err := s.RegisterInstance(inst); err != nil {
@@ -141,7 +142,7 @@ func TestTEEInstanceCRUD(t *testing.T) {
 	if got == nil {
 		t.Fatal("GetInstance returned nil")
 	}
-	if got.BoundAppID != "app1" || got.BoundUserID != "user@example.com" {
+	if got.BoundVault != "app1" || got.BoundUserID != "user@example.com" {
 		t.Errorf("got instance %+v", got)
 	}
 
@@ -164,7 +165,7 @@ func TestTEEInstanceRegister_ForeignKeyEnforced(t *testing.T) {
 
 	// app exists, but no matching user_secret (app_id,user_id)
 	if err := s.CreateApp(&App{
-		AppID:                "app1",
+		Vault:                "app1",
 		Name:                 "App 1",
 		ServiceType:          "gmail",
 		CredentialsEncrypted: []byte("creds"),
@@ -173,10 +174,11 @@ func TestTEEInstanceRegister_ForeignKeyEnforced(t *testing.T) {
 	}
 
 	err := s.RegisterInstance(&TEEInstance{
-		FID:         "no-secret",
-		PublicKey:   []byte("another-32-bytes-public-key-value"),
-		BoundAppID:  "app1",
-		BoundUserID: "missing@example.com",
+		FID:                   "no-secret",
+		PublicKey:             []byte("another-32-bytes-public-key-value"),
+		BoundVault:            "app1",
+		BoundAttestationAppID: "app1",
+		BoundUserID:           "missing@example.com",
 	})
 	if err == nil {
 		t.Fatal("expected foreign-key error when no matching user_secret exists")
@@ -190,7 +192,7 @@ func TestDeleteApp(t *testing.T) {
 	s := newTestStore(t)
 
 	app := &App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	}
 	s.CreateApp(app)
@@ -224,11 +226,11 @@ func TestDeleteApp_ForeignKeyBlocks(t *testing.T) {
 	s := newTestStore(t)
 
 	s.CreateApp(&App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	})
 	s.UpsertUserSecret(&UserSecret{
-		AppID: "app1", UserID: "user@example.com",
+		Vault: "app1", UserID: "user@example.com",
 		SecretEncrypted: []byte("token"),
 	})
 
@@ -245,16 +247,16 @@ func TestDeleteAppCascade(t *testing.T) {
 	s := newTestStore(t)
 
 	s.CreateApp(&App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	})
 	s.UpsertUserSecret(&UserSecret{
-		AppID: "app1", UserID: "user@example.com",
+		Vault: "app1", UserID: "user@example.com",
 		SecretEncrypted: []byte("token"),
 	})
 	s.RegisterInstance(&TEEInstance{
 		FID: "fid1", PublicKey: []byte("pubkey-32-bytes-placeholder-here"),
-		BoundAppID: "app1", BoundUserID: "user@example.com",
+		BoundVault: "app1", BoundAttestationAppID: "app1", BoundUserID: "user@example.com",
 	})
 
 	deleted, err := s.DeleteAppCascade("app1")
@@ -293,11 +295,11 @@ func TestListInstances(t *testing.T) {
 	s := newTestStore(t)
 
 	s.CreateApp(&App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	})
 	s.UpsertUserSecret(&UserSecret{
-		AppID: "app1", UserID: "user@example.com",
+		Vault: "app1", UserID: "user@example.com",
 		SecretEncrypted: []byte("token"),
 	})
 
@@ -312,11 +314,11 @@ func TestListInstances(t *testing.T) {
 
 	s.RegisterInstance(&TEEInstance{
 		FID: "fid1", PublicKey: []byte("pubkey-32-bytes-placeholder-here"),
-		BoundAppID: "app1", BoundUserID: "user@example.com", Label: "inst1",
+		BoundVault: "app1", BoundAttestationAppID: "app1", BoundUserID: "user@example.com", Label: "inst1",
 	})
 	s.RegisterInstance(&TEEInstance{
 		FID: "fid2", PublicKey: []byte("pubkey-32-bytes-placeholder-two!"),
-		BoundAppID: "app1", BoundUserID: "user@example.com", Label: "inst2",
+		BoundVault: "app1", BoundAttestationAppID: "app1", BoundUserID: "user@example.com", Label: "inst2",
 	})
 
 	instances, err = s.ListInstances()
@@ -332,16 +334,16 @@ func TestDeleteInstance(t *testing.T) {
 	s := newTestStore(t)
 
 	s.CreateApp(&App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	})
 	s.UpsertUserSecret(&UserSecret{
-		AppID: "app1", UserID: "user@example.com",
+		Vault: "app1", UserID: "user@example.com",
 		SecretEncrypted: []byte("token"),
 	})
 	s.RegisterInstance(&TEEInstance{
 		FID: "fid1", PublicKey: []byte("pubkey-32-bytes-placeholder-here"),
-		BoundAppID: "app1", BoundUserID: "user@example.com",
+		BoundVault: "app1", BoundAttestationAppID: "app1", BoundUserID: "user@example.com",
 	})
 
 	deleted, err := s.DeleteInstance("fid1")
@@ -371,11 +373,11 @@ func TestListUserSecrets(t *testing.T) {
 	s := newTestStore(t)
 
 	s.CreateApp(&App{
-		AppID: "app1", Name: "App 1", ServiceType: "gmail",
+		Vault: "app1", Name: "App 1", ServiceType: "gmail",
 		CredentialsEncrypted: []byte("creds"),
 	})
 	s.CreateApp(&App{
-		AppID: "app2", Name: "App 2", ServiceType: "drive",
+		Vault: "app2", Name: "App 2", ServiceType: "drive",
 		CredentialsEncrypted: []byte("creds"),
 	})
 
@@ -388,9 +390,9 @@ func TestListUserSecrets(t *testing.T) {
 		t.Fatalf("expected 0 secrets, got %d", len(secrets))
 	}
 
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user1@example.com", SecretEncrypted: []byte("t1")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user2@example.com", SecretEncrypted: []byte("t2")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app2", UserID: "user1@example.com", SecretEncrypted: []byte("t3")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user1@example.com", SecretEncrypted: []byte("t1")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user2@example.com", SecretEncrypted: []byte("t2")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app2", UserID: "user1@example.com", SecretEncrypted: []byte("t3")})
 
 	secrets, err = s.ListUserSecrets()
 	if err != nil {
@@ -410,12 +412,12 @@ func TestListUserSecrets(t *testing.T) {
 func TestListUserSecretsByApp(t *testing.T) {
 	s := newTestStore(t)
 
-	s.CreateApp(&App{AppID: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
-	s.CreateApp(&App{AppID: "app2", Name: "App 2", ServiceType: "drive", CredentialsEncrypted: []byte("creds")})
+	s.CreateApp(&App{Vault: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
+	s.CreateApp(&App{Vault: "app2", Name: "App 2", ServiceType: "drive", CredentialsEncrypted: []byte("creds")})
 
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user1@example.com", SecretEncrypted: []byte("t1")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user2@example.com", SecretEncrypted: []byte("t2")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app2", UserID: "user1@example.com", SecretEncrypted: []byte("t3")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user1@example.com", SecretEncrypted: []byte("t1")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user2@example.com", SecretEncrypted: []byte("t2")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app2", UserID: "user1@example.com", SecretEncrypted: []byte("t3")})
 
 	secrets, err := s.ListUserSecretsByApp("app1")
 	if err != nil {
@@ -445,8 +447,8 @@ func TestListUserSecretsByApp(t *testing.T) {
 func TestDeleteUserSecret(t *testing.T) {
 	s := newTestStore(t)
 
-	s.CreateApp(&App{AppID: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user@example.com", SecretEncrypted: []byte("token")})
+	s.CreateApp(&App{Vault: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user@example.com", SecretEncrypted: []byte("token")})
 
 	deleted, err := s.DeleteUserSecret("app1", "user@example.com")
 	if err != nil {
@@ -474,11 +476,11 @@ func TestDeleteUserSecret(t *testing.T) {
 func TestDeleteUserSecret_ForeignKeyBlocks(t *testing.T) {
 	s := newTestStore(t)
 
-	s.CreateApp(&App{AppID: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user@example.com", SecretEncrypted: []byte("token")})
+	s.CreateApp(&App{Vault: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user@example.com", SecretEncrypted: []byte("token")})
 	s.RegisterInstance(&TEEInstance{
 		FID: "fid1", PublicKey: []byte("pubkey-32-bytes-placeholder-here"),
-		BoundAppID: "app1", BoundUserID: "user@example.com",
+		BoundVault: "app1", BoundAttestationAppID: "app1", BoundUserID: "user@example.com",
 	})
 
 	_, err := s.DeleteUserSecret("app1", "user@example.com")
@@ -493,11 +495,11 @@ func TestDeleteUserSecret_ForeignKeyBlocks(t *testing.T) {
 func TestDeleteUserSecretCascade(t *testing.T) {
 	s := newTestStore(t)
 
-	s.CreateApp(&App{AppID: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
-	s.UpsertUserSecret(&UserSecret{AppID: "app1", UserID: "user@example.com", SecretEncrypted: []byte("token")})
+	s.CreateApp(&App{Vault: "app1", Name: "App 1", ServiceType: "gmail", CredentialsEncrypted: []byte("creds")})
+	s.UpsertUserSecret(&UserSecret{Vault: "app1", UserID: "user@example.com", SecretEncrypted: []byte("token")})
 	s.RegisterInstance(&TEEInstance{
 		FID: "fid1", PublicKey: []byte("pubkey-32-bytes-placeholder-here"),
-		BoundAppID: "app1", BoundUserID: "user@example.com",
+		BoundVault: "app1", BoundAttestationAppID: "app1", BoundUserID: "user@example.com",
 	})
 
 	deleted, err := s.DeleteUserSecretCascade("app1", "user@example.com")
@@ -531,7 +533,7 @@ func TestTEEInstanceRegister_PublicKeyUnique(t *testing.T) {
 	s := newTestStore(t)
 
 	if err := s.CreateApp(&App{
-		AppID:                "app1",
+		Vault:                "app1",
 		Name:                 "App 1",
 		ServiceType:          "gmail",
 		CredentialsEncrypted: []byte("creds"),
@@ -539,7 +541,7 @@ func TestTEEInstanceRegister_PublicKeyUnique(t *testing.T) {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	if err := s.UpsertUserSecret(&UserSecret{
-		AppID:           "app1",
+		Vault:           "app1",
 		UserID:          "user@example.com",
 		SecretEncrypted: []byte("token"),
 	}); err != nil {
@@ -549,19 +551,21 @@ func TestTEEInstanceRegister_PublicKeyUnique(t *testing.T) {
 	pub := []byte("shared-32-byte-public-key-value!!")
 
 	if err := s.RegisterInstance(&TEEInstance{
-		FID:         "fid-1",
-		PublicKey:   pub,
-		BoundAppID:  "app1",
-		BoundUserID: "user@example.com",
+		FID:                   "fid-1",
+		PublicKey:             pub,
+		BoundVault:            "app1",
+		BoundAttestationAppID: "app1",
+		BoundUserID:           "user@example.com",
 	}); err != nil {
 		t.Fatalf("RegisterInstance first: %v", err)
 	}
 
 	err := s.RegisterInstance(&TEEInstance{
-		FID:         "fid-2",
-		PublicKey:   pub,
-		BoundAppID:  "app1",
-		BoundUserID: "user@example.com",
+		FID:                   "fid-2",
+		PublicKey:             pub,
+		BoundVault:            "app1",
+		BoundAttestationAppID: "app1",
+		BoundUserID:           "user@example.com",
 	})
 	if err == nil {
 		t.Fatal("expected unique constraint error for duplicate public_key")

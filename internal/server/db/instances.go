@@ -13,15 +13,15 @@ import (
 var (
 	ErrInstanceDuplicateFID    = errors.New("instance with this FID already exists")
 	ErrInstanceDuplicateKey    = errors.New("instance with this public key already exists")
-	ErrInstanceAppUserNotFound = errors.New("bound app/user not found: the app must be registered and the user must have completed OAuth authorization before registering an instance")
+	ErrInstanceAppUserNotFound = errors.New("bound vault/user not found: the vault must be registered and the user must have completed OAuth authorization before registering an instance")
 )
 
 // RegisterInstance inserts a new TEE instance.
 func (s *Store) RegisterInstance(inst *TEEInstance) error {
 	_, err := s.db.Exec(
-		`INSERT INTO tee_instances (fid, public_key, bound_app_id, bound_user_id, label)
-		 VALUES (?, ?, ?, ?, ?)`,
-		inst.FID, inst.PublicKey, inst.BoundAppID, inst.BoundUserID, inst.Label,
+		`INSERT INTO tee_instances (fid, public_key, bound_app_id, bound_attestation_app_id, bound_user_id, label)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		inst.FID, inst.PublicKey, inst.BoundVault, inst.BoundAttestationAppID, inst.BoundUserID, inst.Label,
 	)
 	if err != nil {
 		var sqliteErr *sqlite.Error
@@ -44,9 +44,9 @@ func (s *Store) RegisterInstance(inst *TEEInstance) error {
 func (s *Store) GetInstance(fid string) (*TEEInstance, error) {
 	inst := &TEEInstance{}
 	err := s.db.QueryRow(
-		`SELECT fid, public_key, bound_app_id, bound_user_id, label, created_at, last_used_at
+		`SELECT fid, public_key, bound_app_id, bound_attestation_app_id, bound_user_id, label, created_at, last_used_at
 		 FROM tee_instances WHERE fid = ?`, fid,
-	).Scan(&inst.FID, &inst.PublicKey, &inst.BoundAppID, &inst.BoundUserID, &inst.Label, &inst.CreatedAt, &inst.LastUsedAt)
+	).Scan(&inst.FID, &inst.PublicKey, &inst.BoundVault, &inst.BoundAttestationAppID, &inst.BoundUserID, &inst.Label, &inst.CreatedAt, &inst.LastUsedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -59,7 +59,7 @@ func (s *Store) GetInstance(fid string) (*TEEInstance, error) {
 // ListInstances returns all registered TEE instances.
 func (s *Store) ListInstances() ([]TEEInstance, error) {
 	rows, err := s.db.Query(
-		`SELECT fid, public_key, bound_app_id, bound_user_id, label, created_at, last_used_at
+		`SELECT fid, public_key, bound_app_id, bound_attestation_app_id, bound_user_id, label, created_at, last_used_at
 		 FROM tee_instances ORDER BY created_at`,
 	)
 	if err != nil {
@@ -70,7 +70,7 @@ func (s *Store) ListInstances() ([]TEEInstance, error) {
 	var instances []TEEInstance
 	for rows.Next() {
 		var inst TEEInstance
-		if err := rows.Scan(&inst.FID, &inst.PublicKey, &inst.BoundAppID, &inst.BoundUserID, &inst.Label, &inst.CreatedAt, &inst.LastUsedAt); err != nil {
+		if err := rows.Scan(&inst.FID, &inst.PublicKey, &inst.BoundVault, &inst.BoundAttestationAppID, &inst.BoundUserID, &inst.Label, &inst.CreatedAt, &inst.LastUsedAt); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
 		}
 		instances = append(instances, inst)
