@@ -1,5 +1,15 @@
+FROM rust:1.85-alpine AS dcap-builder
+ARG DCAP_QVL_REF=c201e5e2b312
+WORKDIR /src
+RUN apk add --no-cache git musl-dev
+RUN git clone https://github.com/Phala-Network/dcap-qvl.git . \
+  && git checkout ${DCAP_QVL_REF}
+RUN cargo build --release --features go
+
 FROM golang:1.24-alpine AS builder
 WORKDIR /src
+RUN apk add --no-cache build-base
+COPY --from=dcap-builder /src/target/release/libdcap_qvl.a /usr/local/lib/libdcap_qvl.a
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -9,12 +19,17 @@ COPY . .
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG TARGETOS TARGETARCH
+ARG GO_TAGS=ratls
+ENV CGO_ENABLED=1
+ENV CGO_LDFLAGS=-L/usr/local/lib
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+      -tags "${GO_TAGS}" \
       -ldflags "-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}" \
       -o /out/jingui ./cmd/jingui
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+      -tags "${GO_TAGS}" \
       -ldflags "-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}" \
       -o /out/jingui-server ./cmd/jingui-server
 

@@ -18,7 +18,19 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Build linux/amd64 binaries
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build dcap-qvl static library
+        run: |
+          git clone https://github.com/Phala-Network/dcap-qvl.git /tmp/dcap-qvl
+          cd /tmp/dcap-qvl
+          git checkout c201e5e2b312
+          cargo build --release --features go
+          echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
+          echo "CGO_LDFLAGS=-L/tmp/dcap-qvl/target/release" >> "$GITHUB_ENV"
+
+      - name: Build linux/amd64 binaries (RA-TLS)
         env:
           GOOS: linux
           GOARCH: amd64
@@ -26,8 +38,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           COMMIT="$(git rev-parse --short HEAD)"
           LDFLAGS="-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}"
-          go build -ldflags "${LDFLAGS}" -o jingui-linux-amd64 ./cmd/jingui
-          go build -ldflags "${LDFLAGS}" -o jingui-server-linux-amd64 ./cmd/jingui-server
+          go build -tags ratls -ldflags "${LDFLAGS}" -o jingui-linux-amd64 ./cmd/jingui
+          go build -tags ratls -ldflags "${LDFLAGS}" -o jingui-server-linux-amd64 ./cmd/jingui-server
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -114,6 +126,8 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+            GO_TAGS=ratls
+            DCAP_QVL_REF=c201e5e2b312
 
       - name: Docker metadata (client)
         id: meta-client
@@ -137,3 +151,5 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+            GO_TAGS=ratls
+            DCAP_QVL_REF=c201e5e2b312
