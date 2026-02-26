@@ -1,3 +1,7 @@
+## v0.1.2-alpha.4 (2026-02-26)
+
+- build: publish ratls-only artifacts and docker images
+
 ## v0.1.2-alpha.3 (2026-02-26)
 
 - refactor: rename app namespace to vault and split attestation app binding
