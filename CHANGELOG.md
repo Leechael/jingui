@@ -1,3 +1,7 @@
+## v0.1.2-alpha.2 (2026-02-26)
+
+- logging: add verbose/log-level flags and RA-TLS measurement debug logs
+
 ## v0.1.2-alpha.1 (2026-02-25)
 
 - ratls: complete strict flow hardening, policy pinning, tests and docs
