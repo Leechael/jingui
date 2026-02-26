@@ -1,3 +1,7 @@
+## v0.1.2-alpha.5 (2026-02-26)
+
+- fix: add libgcc to runtime images for CGO unwind symbols
+
 ## v0.1.2-alpha.4 (2026-02-26)
 
 - build: publish ratls-only artifacts and docker images
