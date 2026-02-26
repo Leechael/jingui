@@ -1,3 +1,7 @@
+## v0.1.2-alpha.3 (2026-02-26)
+
+- refactor: rename app namespace to vault and split attestation app binding
+
 ## v0.1.2-alpha.2 (2026-02-26)
 
 - logging: add verbose/log-level flags and RA-TLS measurement debug logs
