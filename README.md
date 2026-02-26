@@ -53,6 +53,7 @@ docker run -d \
 | `JINGUI_LISTEN_ADDR` | No | `:8080` | Listen address |
 | `JINGUI_BASE_URL` | No | `http://localhost:8080` | Public URL for OAuth callbacks |
 | `JINGUI_RATLS_STRICT` | No | `true` | Require client/server attestation exchange in challenge/fetch flow |
+| `JINGUI_LOG_LEVEL` | No | `info` | Log level (`debug`,`info`,`warn`,`error`) for RA-TLS handshake diagnostics |
 
 ### Client
 
@@ -93,12 +94,15 @@ Lines with `jingui://` URIs are fetched and decrypted; plain values pass through
 | `--env-file` | `.env` | Environment file with secret refs |
 | `--insecure` | `false` | Allow plaintext HTTP |
 | `--no-lockdown` | `false` | Disable seccomp hardening |
+| `--verbose` | `false` | Enable verbose debug logs (same as `--log-level debug`) |
+| `--log-level` | `JINGUI_LOG_LEVEL` / `info` | Log level (`debug`,`info`,`warn`,`error`) |
 
 `jingui read` also supports `--show-meta` to print FID/Public Key to stderr when debugging.
 
 RA-TLS strict client knobs:
 - `JINGUI_RATLS_STRICT` (default `true`)
 - `JINGUI_RATLS_EXPECT_SERVER_APP_ID` (optional pin; when set, server attestation app_id must match)
+- `JINGUI_LOG_LEVEL=debug` (or `--verbose`) to print RA verification measurements (MR/RTMR/TCB status)
 
 ## Secret Reference Format
 

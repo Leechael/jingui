@@ -16,6 +16,7 @@ import (
 
 	"github.com/aspect-build/jingui/internal/attestation"
 	"github.com/aspect-build/jingui/internal/crypto"
+	"github.com/aspect-build/jingui/internal/logx"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -94,6 +95,7 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 			return nil, fmt.Errorf("collect local attestation: %w", err)
 		}
 		clientAtt = &bundle
+		logx.Debugf("ratls.client.challenge peer=client app_id=%q instance_id=%q device_id=%q", bundle.AppID, bundle.Instance, bundle.DeviceID)
 	}
 
 	challenge, err := requestChallenge(serverURL, fid, allowInsecure, clientAtt)
@@ -105,6 +107,7 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 		if challenge.ServerAttestation == nil {
 			return nil, fmt.Errorf("challenge response missing server_attestation in strict RA-TLS mode")
 		}
+		logx.Debugf("ratls.client.challenge peer=server received app_id=%q instance_id=%q device_id=%q", challenge.ServerAttestation.AppID, challenge.ServerAttestation.Instance, challenge.ServerAttestation.DeviceID)
 		if err := verifyServerAttestation(*challenge.ServerAttestation); err != nil {
 			return nil, fmt.Errorf("verify server attestation: %w", err)
 		}
@@ -190,6 +193,7 @@ func verifyServerAttestation(bundle attestation.Bundle) error {
 	if err != nil {
 		return err
 	}
+	logx.Debugf("ratls.client.verify peer=server verified_app_id=%q instance_id=%q device_id=%q", identity.AppID, identity.InstanceID, identity.DeviceID)
 	expected := expectedServerAppID()
 	if expected != "" {
 		if identity.AppID == "" {
@@ -198,6 +202,7 @@ func verifyServerAttestation(bundle attestation.Bundle) error {
 		if identity.AppID != expected {
 			return fmt.Errorf("server attestation app_id mismatch: expected %q got %q", expected, identity.AppID)
 		}
+		logx.Debugf("ratls.client.verify pin matched expected_server_app_id=%q", expected)
 	}
 	return nil
 }

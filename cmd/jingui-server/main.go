@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/aspect-build/jingui/internal/logx"
 	"github.com/aspect-build/jingui/internal/server"
 	"github.com/aspect-build/jingui/internal/server/db"
 	"github.com/aspect-build/jingui/internal/version"
@@ -13,6 +14,8 @@ import (
 
 func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	verbose := flag.Bool("verbose", false, "Enable verbose debug logs (same as --log-level debug)")
+	logLevel := flag.String("log-level", "", "Log level: debug|info|warn|error (or JINGUI_LOG_LEVEL)")
 	flag.BoolVar(showVersion, "v", false, "Print version and exit")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s\n\n", version.String("jingui-server"))
@@ -24,6 +27,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  JINGUI_LISTEN_ADDR  Listen address (default: :8080)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_BASE_URL     Public base URL for OAuth callbacks (default: http://localhost:<port>)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_RATLS_STRICT Enforce strict RA-TLS mode for secret fetch flow (default: true)\n")
+		fmt.Fprintf(os.Stderr, "  JINGUI_LOG_LEVEL   Log level for server logs: debug|info|warn|error (default: info)\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
 		flag.PrintDefaults()
 	}
@@ -32,6 +36,10 @@ func main() {
 	if *showVersion {
 		fmt.Println(version.String("jingui-server"))
 		os.Exit(0)
+	}
+
+	if err := logx.Configure(*logLevel, *verbose); err != nil {
+		log.Fatalf("configure logging: %v", err)
 	}
 
 	cfg, err := server.LoadConfig()
@@ -46,6 +54,7 @@ func main() {
 	defer store.Close()
 
 	r := server.NewRouter(store, cfg)
+	logx.Infof("server config: ratls_strict=%v base_url=%s", cfg.RATLSStrict, cfg.BaseURL)
 
 	log.Printf("jingui-server listening on %s", cfg.ListenAddr)
 	if err := r.Run(cfg.ListenAddr); err != nil {

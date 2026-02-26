@@ -65,6 +65,7 @@ export JINGUI_ADMIN_TOKEN="<value from previous step>"
 export JINGUI_DB_PATH="./jingui-test.db"
 export JINGUI_LISTEN_ADDR=":8080"
 export JINGUI_BASE_URL="http://<SERVER_IP>:8080"   # Must be reachable from TDX
+export JINGUI_LOG_LEVEL="debug"                    # Optional: print RA measurements/status
 
 bin/jingui-server
 # Output: jingui-server listening on :8080
@@ -72,6 +73,7 @@ bin/jingui-server
 
 > If server runs on Linux, use `bin/linux-amd64/jingui-server`.
 > Note: if `JINGUI_BASE_URL` is not HTTPS, server prints a warning. This is acceptable in test environments.
+> For RA-TLS diagnostics, either set `JINGUI_LOG_LEVEL=debug` or start with `bin/jingui-server --verbose`.
 
 ### A3. Register App (Upload Google OAuth `credentials.json`)
 
@@ -304,13 +306,14 @@ EOF
 ```bash
 cd /opt/jingui
 ./jingui read \
+  --verbose \
   --server "http://<SERVER_IP>:8080" \
   --appkeys .appkeys.json \
   --insecure \
   "jingui://gmail-app/user@example.com/client_id"
 ```
 
-**Expected**: by default prints only the real `client_id` value to stdout (e.g., `xxx.apps.googleusercontent.com`).
+**Expected**: prints the real `client_id` value to stdout (e.g., `xxx.apps.googleusercontent.com`). With `--verbose`, stderr also includes RA-TLS verification logs (TCB status, MR/RTMR measurements, app_id binding).
 
 To display debug metadata (FID/Public Key):
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/aspect-build/jingui/internal/attestation"
 	"github.com/aspect-build/jingui/internal/crypto"
+	"github.com/aspect-build/jingui/internal/logx"
 	"github.com/aspect-build/jingui/internal/refparser"
 	"github.com/aspect-build/jingui/internal/server/db"
 	"github.com/gin-gonic/gin"
@@ -148,32 +149,39 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 
 		var serverAtt *attestation.Bundle
 		if strict {
+			logx.Debugf("ratls.server.challenge strict=true fid=%s bound_app_id=%s", req.FID, inst.BoundAppID)
 			if verifier == nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "attestation verifier is not configured"})
 				return
 			}
 			if req.ClientAttestation == nil {
+				logx.Warnf("ratls.server.challenge rejected: missing client_attestation fid=%s", req.FID)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "client_attestation is required in strict RA-TLS mode"})
 				return
 			}
 			if strings.TrimSpace(req.ClientAttestation.AppID) == "" {
+				logx.Warnf("ratls.server.challenge rejected: missing client_attestation.app_id fid=%s", req.FID)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "client_attestation.app_id is required in strict RA-TLS mode"})
 				return
 			}
 			if req.ClientAttestation.AppID != inst.BoundAppID {
+				logx.Warnf("ratls.server.challenge rejected: request app_id mismatch fid=%s attested_app_id=%s bound_app_id=%s", req.FID, req.ClientAttestation.AppID, inst.BoundAppID)
 				c.JSON(http.StatusForbidden, gin.H{"error": "client attestation app_id mismatch"})
 				return
 			}
 
 			identity, err := verifier.Verify(c.Request.Context(), *req.ClientAttestation)
 			if err != nil {
+				logx.Warnf("ratls.server.challenge rejected: verify failed fid=%s err=%v", req.FID, err)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "client RA verification failed: " + err.Error()})
 				return
 			}
 			if identity.AppID != "" && identity.AppID != inst.BoundAppID {
+				logx.Warnf("ratls.server.challenge rejected: verified app_id mismatch fid=%s verified_app_id=%s bound_app_id=%s", req.FID, identity.AppID, inst.BoundAppID)
 				c.JSON(http.StatusForbidden, gin.H{"error": "client RA app_id mismatch"})
 				return
 			}
+			logx.Debugf("ratls.server.challenge peer=client verified_app_id=%q instance_id=%q device_id=%q", identity.AppID, identity.InstanceID, identity.DeviceID)
 
 			if serverCollector == nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "server attestation collector is not configured"})
@@ -185,6 +193,7 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 				return
 			}
 			serverAtt = &bundle
+			logx.Debugf("ratls.server.challenge peer=server provided app_id=%q instance_id=%q device_id=%q", bundle.AppID, bundle.Instance, bundle.DeviceID)
 		}
 
 		nonce := make([]byte, 32)
@@ -230,8 +239,12 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 			return
 		}
 		if err := fetchChallengeStore.consume(req.ChallengeID, req.FID, challengeResponse, strict, time.Now()); err != nil {
+			logx.Warnf("ratls.server.fetch rejected: challenge verification failed fid=%s challenge_id=%s err=%v", req.FID, req.ChallengeID, err)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "challenge verification failed: " + err.Error()})
 			return
+		}
+		if strict {
+			logx.Debugf("ratls.server.fetch strict challenge verification passed fid=%s challenge_id=%s", req.FID, req.ChallengeID)
 		}
 
 		// Look up TEE instance by FID
