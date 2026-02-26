@@ -1,3 +1,7 @@
+## v0.1.2-alpha.6 (2026-02-26)
+
+- logging: print version string on server startup
+
 ## v0.1.2-alpha.5 (2026-02-26)
 
 - fix: add libgcc to runtime images for CGO unwind symbols
