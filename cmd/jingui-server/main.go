@@ -54,6 +54,7 @@ func main() {
 	defer store.Close()
 
 	r := server.NewRouter(store, cfg)
+	log.Print(version.String("jingui-server"))
 	logx.Infof("server config: ratls_strict=%v base_url=%s", cfg.RATLSStrict, cfg.BaseURL)
 
 	log.Printf("jingui-server listening on %s", cfg.ListenAddr)
