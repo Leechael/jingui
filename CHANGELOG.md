@@ -1,3 +1,8 @@
+## v0.1.2-alpha.8 (2026-02-27)
+
+- build: remove ratls build tag stub, always link dcap-qvl
+- fix: fail early with clear error when ratls strict mode lacks ratls build tag
+
 ## v0.1.2-alpha.7 (2026-02-27)
 
 - fix: pin SQLite connection for PRAGMA + migration atomicity
