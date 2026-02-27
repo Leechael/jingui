@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +20,10 @@ import (
 	"github.com/aspect-build/jingui/internal/server/db"
 	"github.com/gin-gonic/gin"
 )
+
+type notFoundError struct{ msg string }
+
+func (e *notFoundError) Error() string { return e.msg }
 
 const challengeTTL = 2 * time.Minute
 
@@ -305,7 +310,7 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 
 			// Validate: ref's item must match instance's bound_item.
 			if ref.Item != inst.BoundItem {
-				c.JSON(http.StatusForbidden, gin.H{"error": "item mismatch for reference: " + refStr})
+				c.JSON(http.StatusNotFound, gin.H{"error": "item not found for reference: " + refStr})
 				return
 			}
 
@@ -317,12 +322,17 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 			case "refresh_token":
 				plainValue, err = extractVaultItemField(store, masterKey, ref.Vault, ref.Item, ref.FieldName)
 			default:
-				c.JSON(http.StatusBadRequest, gin.H{"error": "unknown field: " + ref.FieldName})
+				c.JSON(http.StatusNotFound, gin.H{"error": "unknown field: " + ref.FieldName})
 				return
 			}
 
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve " + refStr + ": " + err.Error()})
+				var nfe *notFoundError
+				if errors.As(err, &nfe) {
+					c.JSON(http.StatusNotFound, gin.H{"error": nfe.Error()})
+				} else {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve " + refStr + ": " + err.Error()})
+				}
 				return
 			}
 
@@ -346,7 +356,7 @@ func extractAppField(store *db.Store, masterKey [32]byte, vault, fieldName strin
 		return nil, err
 	}
 	if app == nil {
-		return nil, fmt.Errorf("vault not found: %s", vault)
+		return nil, &notFoundError{"vault not found: " + vault}
 	}
 
 	credJSON, err := crypto.DecryptAtRest(masterKey, app.CredentialsEncrypted)
@@ -365,7 +375,7 @@ func extractAppField(store *db.Store, masterKey [32]byte, vault, fieldName strin
 	case "client_secret":
 		return []byte(creds.ClientSecret), nil
 	default:
-		return nil, fmt.Errorf("unknown app field: %s", fieldName)
+		return nil, &notFoundError{"unknown app field: " + fieldName}
 	}
 }
 
@@ -375,7 +385,7 @@ func extractVaultItemField(store *db.Store, masterKey [32]byte, vault, item, fie
 		return nil, err
 	}
 	if vi == nil {
-		return nil, fmt.Errorf("secret not found for %s/%s", vault, item)
+		return nil, &notFoundError{"secret not found for " + vault + "/" + item}
 	}
 
 	secretJSON, err := crypto.DecryptAtRest(masterKey, vi.SecretEncrypted)
@@ -390,7 +400,7 @@ func extractVaultItemField(store *db.Store, masterKey [32]byte, vault, item, fie
 
 	val, ok := secretMap[fieldName]
 	if !ok {
-		return nil, fmt.Errorf("field %q not found in secret", fieldName)
+		return nil, &notFoundError{"field " + fieldName + " not found in secret"}
 	}
 	return []byte(val), nil
 }
