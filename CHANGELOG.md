@@ -1,3 +1,8 @@
+## v0.1.2-alpha.9 (2026-02-27)
+
+- feat: add PUT /v1/instances/:fid and fix hex bound_attestation_app_id examples
+- docs: fix stale field names and complete OpenAPI schemas
+
 ## v0.1.2-alpha.8 (2026-02-27)
 
 - build: remove ratls build tag stub, always link dcap-qvl
