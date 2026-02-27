@@ -7,6 +7,9 @@ import (
 	"fmt"
 )
 
+// RATLSAvailable reports whether RA-TLS verification is compiled in.
+func RATLSAvailable() bool { return false }
+
 // RATLSVerifier stub used when built without `-tags ratls`.
 type RATLSVerifier struct{}
 

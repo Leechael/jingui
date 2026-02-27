@@ -88,6 +88,9 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 	}
 
 	strict := ratlsStrictEnabled()
+	if strict && !attestation.RATLSAvailable() {
+		return nil, fmt.Errorf("RA-TLS strict mode is enabled but binary was built without -tags ratls; rebuild with -tags ratls or set JINGUI_RATLS_STRICT=false")
+	}
 	var clientAtt *attestation.Bundle
 	if strict {
 		bundle, err := collectLocalAttestation()
@@ -254,6 +257,9 @@ func CheckInstance(serverURL, fid string, allowInsecure bool) error {
 		return fmt.Errorf("server URL %q is not HTTPS; use --insecure to allow plaintext HTTP", serverURL)
 	}
 	strict := ratlsStrictEnabled()
+	if strict && !attestation.RATLSAvailable() {
+		return fmt.Errorf("RA-TLS strict mode is enabled but binary was built without -tags ratls; rebuild with -tags ratls or set JINGUI_RATLS_STRICT=false")
+	}
 	var clientAtt *attestation.Bundle
 	if strict {
 		bundle, err := collectLocalAttestation()
