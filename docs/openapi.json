@@ -112,7 +112,6 @@
       },
       "DebugPolicyRequest": {
         "type": "object",
-        "required": ["allow_read_debug"],
         "properties": {
           "allow_read_debug": { "type": "boolean" }
         }
@@ -120,7 +119,8 @@
       "Error": {
         "type": "object",
         "properties": {
-          "error": { "type": "string" }
+          "error": { "type": "string" },
+          "hint": { "type": "string", "description": "Optional hint for resolving the error" }
         }
       }
     }
@@ -468,7 +468,8 @@
                     "vault": { "type": "string" },
                     "item": { "type": "string" },
                     "allow_read_debug": { "type": "boolean" },
-                    "source": { "type": "string", "description": "Present as 'default' when no explicit policy exists" }
+                    "source": { "type": "string", "description": "Present as 'default' when no explicit policy exists" },
+                    "updated_at": { "type": "string", "format": "date-time", "description": "Present when an explicit policy row exists" }
                   }
                 }
               }
@@ -553,7 +554,8 @@
         "summary": "Start OAuth redirect flow",
         "security": [{ "bearerAuth": [] }],
         "responses": {
-          "302": { "description": "Redirect to OAuth provider" }
+          "302": { "description": "Redirect to OAuth provider" },
+          "404": { "description": "App not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -565,7 +567,23 @@
         "summary": "Start OAuth device flow",
         "security": [{ "bearerAuth": [] }],
         "responses": {
-          "200": { "description": "Device flow started" }
+          "200": {
+            "description": "Device flow started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user_code": { "type": "string" },
+                    "verification_url": { "type": "string" },
+                    "expires_in": { "type": "integer", "description": "Seconds until the device code expires" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "App not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "502": { "description": "Device auth request failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -573,8 +591,22 @@
       "get": {
         "summary": "OAuth callback",
         "responses": {
-          "200": { "description": "Authorized" },
-          "400": { "description": "Invalid callback" }
+          "200": {
+            "description": "Authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["authorized"] },
+                    "app_id": { "type": "string" },
+                    "email": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid callback", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -608,15 +640,50 @@
           }
         },
         "responses": {
-          "200": { "description": "Challenge (+server_attestation in strict mode)" },
-          "401": { "description": "Attestation verification failed / required" },
-          "404": { "description": "Instance not found" }
+          "200": {
+            "description": "Challenge (+server_attestation in strict mode)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "challenge_id": { "type": "string" },
+                    "challenge": { "type": "string", "description": "Base64-encoded ECIES-encrypted nonce" },
+                    "server_attestation": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "Present only in strict RA-TLS mode",
+                      "properties": {
+                        "app_cert": { "type": "string" },
+                        "tcb_info": { "type": "string" },
+                        "app_id": { "type": "string" },
+                        "instance_id": { "type": "string" },
+                        "device_id": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Attestation verification failed / required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Attestation app_id mismatch", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Instance not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/v1/secrets/fetch": {
       "post": {
         "summary": "Verify challenge and fetch encrypted secrets",
+        "parameters": [
+          {
+            "name": "X-Jingui-Command",
+            "in": "header",
+            "schema": { "type": "string", "enum": ["read"] },
+            "description": "Set to 'read' to perform a debug read (subject to debug policy)"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -635,11 +702,27 @@
           }
         },
         "responses": {
-          "200": { "description": "Encrypted secrets" },
-          "400": { "description": "Invalid reference format" },
-          "401": { "description": "Challenge/RA verification failed" },
-          "403": { "description": "Vault access denied (vault mismatch)" },
-          "404": { "description": "Item, field, vault, or secret not found" }
+          "200": {
+            "description": "Encrypted secrets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "secrets": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" },
+                      "description": "Map of secret reference to base64-encoded ECIES ciphertext"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Challenge/RA verification failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Vault/item mismatch or debug policy denied", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Instance not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     }
