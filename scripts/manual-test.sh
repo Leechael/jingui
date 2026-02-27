@@ -87,7 +87,7 @@ echo "--- 3.1 Create app ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
   -X POST "$BASE/v1/apps" -H "$AUTH" -H "Content-Type: application/json" \
   -d '{
-    "app_id": "my-gmail",
+    "vault": "my-gmail",
     "name": "My Gmail App",
     "service_type": "gmail",
     "required_scopes": "https://mail.google.com/",
@@ -235,6 +235,7 @@ HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
   -d "{
     \"public_key\": \"$PUB_KEY\",
     \"bound_vault\": \"my-gmail\",
+    \"bound_attestation_app_id\": \"my-gmail\",
     \"bound_item\": \"alice@example.com\",
     \"label\": \"manual-test\"
   }")
@@ -380,13 +381,13 @@ echo "=============================================="
 echo ""
 echo "--- 7.1 Recreate full chain: app → secret → instance ---"
 curl -s -o /dev/null -X POST "$BASE/v1/apps" -H "$AUTH" -H "Content-Type: application/json" \
-  -d '{"app_id":"cascade-app","name":"Cascade Test","service_type":"gmail",
+  -d '{"vault":"cascade-app","name":"Cascade Test","service_type":"gmail",
        "credentials_json":{"installed":{"client_id":"cid","client_secret":"cs","redirect_uris":["http://localhost"]}}}'
 curl -s -o /dev/null -X PUT "$BASE/v1/credentials/cascade-app" -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"item":"bob@example.com","secrets":{"refresh_token":"tok"}}'
 # Reuse same client key
 curl -s -o /dev/null -X POST "$BASE/v1/instances" -H "$AUTH" -H "Content-Type: application/json" \
-  -d "{\"public_key\":\"$PUB_KEY\",\"bound_vault\":\"cascade-app\",\"bound_item\":\"bob@example.com\"}"
+  -d "{\"public_key\":\"$PUB_KEY\",\"bound_vault\":\"cascade-app\",\"bound_attestation_app_id\":\"cascade-app\",\"bound_item\":\"bob@example.com\"}"
 echo "  Created cascade-app → bob@example.com → instance"
 
 echo ""

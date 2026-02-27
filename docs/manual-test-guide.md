@@ -94,19 +94,19 @@ curl -s -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d "$(jq -n \
-    --arg app_id "gmail-app" \
+    --arg vault "gmail-app" \
     --arg name "Gmail App" \
     --arg service_type "gmail" \
     --arg scopes "https://mail.google.com/" \
     --argjson creds "$(cat credentials.json)" \
-    '{app_id:$app_id, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
+    '{vault:$vault, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
   )"
 ```
 
 **Expected response:**
 
 ```json
-{"app_id":"gmail-app","status":"created"}
+{"vault":"gmail-app","status":"created"}
 ```
 
 **Check ✓**: HTTP 201, status = `created`
@@ -118,12 +118,12 @@ curl -s -X PUT "$SERVER/v1/apps/gmail-app" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d "$(jq -n \
-    --arg app_id "gmail-app" \
+    --arg vault "gmail-app" \
     --arg name "Gmail App" \
     --arg service_type "gmail" \
     --arg scopes "https://mail.google.com/" \
     --argjson creds "$(cat credentials.json)" \
-    '{app_id:$app_id, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
+    '{vault:$vault, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
   )"
 ```
 
@@ -155,7 +155,7 @@ Flow:
 **Expected response:**
 
 ```json
-{"status":"authorized","app_id":"gmail-app","email":"user@example.com"}
+{"status":"authorized","vault":"gmail-app","email":"user@example.com"}
 ```
 
 **Check ✓**: `status = authorized`, `email` matches the authorized Google account
@@ -252,7 +252,7 @@ curl -s -X POST "$SERVER/v1/instances" \
     --arg app "gmail-app" \
     --arg user "$EMAIL" \
     --arg label "tdx-test-1" \
-    '{public_key:$pk, bound_vault:$app, bound_item:$user, label:$label}'
+    '{public_key:$pk, bound_vault:$app, bound_attestation_app_id:$app, bound_item:$user, label:$label}'
   )"
 ```
 
@@ -448,14 +448,14 @@ exit code: 42
 # No token → 401
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
-  -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
+  -d '{"vault":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
 # Expected: 401
 
 # Wrong token → 401
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer wrong-token' \
-  -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
+  -d '{"vault":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
 # Expected: 401
 
 # secrets/challenge is a TEE caller endpoint (no admin token)
