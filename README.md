@@ -85,7 +85,7 @@ jingui read --server https://jingui.example.com 'jingui://my-gmail/alice@example
 # use --show-meta to print FID/Public Key to stderr for debugging
 ```
 
-Lines with `jingui://` URIs are fetched and decrypted; plain values pass through unchanged.
+Lines with `jingui://` (or `op://`) URIs are fetched and decrypted; plain values pass through unchanged.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -111,6 +111,13 @@ jingui://<vault>/<item>/<field_name>
 jingui://<vault>/<item>/<section>/<field_name>
 ```
 
+`op://` is also accepted as an alias (1Password CLI compatible):
+
+```
+op://<vault>/<item>/<field_name>
+op://<vault>/<item>/<section>/<field_name>
+```
+
 - `<vault>` — app/service namespace (e.g. `my-gmail`)
 - `<item>` — item within the vault (e.g. `alice@example.com`)
 - `<section>` — optional subsection (e.g. `oauth`)
@@ -119,7 +126,7 @@ jingui://<vault>/<item>/<section>/<field_name>
 Examples:
 
 - `jingui://my-gmail/alice@example.com/client_id`
-- `jingui://my-gmail/alice@example.com/client_secret`
+- `op://my-gmail/alice@example.com/client_secret`
 - `jingui://my-gmail/alice@example.com/refresh_token`
 - `jingui://my-gmail/alice@example.com/oauth/access_token` (4-segment)
 

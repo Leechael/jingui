@@ -253,7 +253,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Step 7: Access control — wrong item → 403
+	// Step 7: Access control — wrong item → 404
 	badReq2, _ := json.Marshal(map[string]interface{}{
 		"fid":               fid,
 		"secret_references": []string{"jingui://gmail-app/other@example.com/client_id"},
@@ -267,9 +267,9 @@ func TestEndToEnd(t *testing.T) {
 	badReqMap2["challenge_response"] = challengeResponse
 	badReq2, _ = json.Marshal(badReqMap2)
 	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badReq2))
-	if resp.StatusCode != http.StatusForbidden {
+	if resp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(resp.Body)
-		t.Errorf("expected 403 for wrong item, got %d: %s", resp.StatusCode, body)
+		t.Errorf("expected 404 for wrong item, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 

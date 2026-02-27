@@ -511,7 +511,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
   "jingui://wrong-app/user@example.com/client_id"
 ```
 
-**Expected**: request fails with HTTP 403 (`app_id mismatch ...`).
+**Expected**: request fails with HTTP 403 (`vault mismatch ...`).
 
 ### C2. Wrong item (via client read)
 
@@ -523,7 +523,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
   "jingui://gmail-app/wrong@example.com/client_id"
 ```
 
-**Expected**: request fails with HTTP 403 (`item mismatch ...`).
+**Expected**: request fails with HTTP 404 (`item not found ...`).
 
 ### C3. Non-existent FID
 
@@ -602,5 +602,5 @@ curl -s -X DELETE \
 | B12 | gogcli integration | works + no leaks | ☐ |
 | C0 | Admin token auth | no/wrong token → 401, TEE secret endpoints are not admin-token protected | ☐ |
 | C1 | Wrong app_id | 403 | ☐ |
-| C2 | Wrong item | 403 | ☐ |
+| C2 | Wrong item | 404 | ☐ |
 | C3 | Non-existent FID | 404 | ☐ |

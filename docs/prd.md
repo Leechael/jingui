@@ -126,7 +126,11 @@ Use URI-style references:
 
 `jingui://<vault>/<item>/<field_name>` or `jingui://<vault>/<item>/<section>/<field_name>`
 
-- `jingui://`: protocol prefix.
+`op://` is also accepted as an alias (1Password CLI compatible):
+
+`op://<vault>/<item>/<field_name>` or `op://<vault>/<item>/<section>/<field_name>`
+
+- `jingui://` or `op://`: protocol prefix.
 - `<vault>`: vault namespace (e.g. app/service name).
 - `<item>`: item within the vault (e.g. authorized email).
 - `<section>`: optional subsection (e.g. `oauth`).
@@ -136,14 +140,14 @@ Examples:
 
 ```
 GOG_CLIENT_ID="jingui://gmail-app/user@example.com/client_id"
-GOG_CLIENT_SECRET="jingui://gmail-app/user@example.com/client_secret"
+GOG_CLIENT_SECRET="op://gmail-app/user@example.com/client_secret"
 GOG_REFRESH_TOKEN="jingui://gmail-app/user@example.com/refresh_token"
 ```
 
 ### 3.3 `jingui run` Workflow and Security
 
 1. Parse command and args after `jingui run`.
-2. Scan current env for `jingui://` references.
+2. Scan current env for `jingui://` (or `op://`) references.
 3. Batch-fetch all references in one server request.
 4. Decrypt in memory and inject resolved values into child env.
 5. Launch child process:

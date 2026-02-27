@@ -5,14 +5,16 @@ import (
 	"strings"
 )
 
-const refPrefix = "jingui://"
+var refPrefixes = []string{"jingui://", "op://"}
 
-// SecretRef represents a parsed jingui:// reference.
+// SecretRef represents a parsed jingui:// (or op://) reference.
 //
 // Canonical semantics:
 //
 //	jingui://<vault>/<item>/<field_name>
 //	jingui://<vault>/<item>/<section>/<field_name>
+//	op://<vault>/<item>/<field_name>
+//	op://<vault>/<item>/<section>/<field_name>
 type SecretRef struct {
 	Vault     string
 	Item      string
@@ -21,25 +23,41 @@ type SecretRef struct {
 	Raw       string
 }
 
-// IsRef returns true if value starts with "jingui://".
+// IsRef returns true if value starts with "jingui://" or "op://".
 func IsRef(value string) bool {
-	return strings.HasPrefix(value, refPrefix)
+	for _, p := range refPrefixes {
+		if strings.HasPrefix(value, p) {
+			return true
+		}
+	}
+	return false
 }
 
-// Parse parses a jingui://<vault>/<item>/<field_name> or
-// jingui://<vault>/<item>/<section>/<field_name> reference.
+// matchedPrefix returns the prefix that ref starts with, or "" if none match.
+func matchedPrefix(ref string) string {
+	for _, p := range refPrefixes {
+		if strings.HasPrefix(ref, p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// Parse parses a jingui://<vault>/<item>/<field_name> (or op://…) or
+// jingui://<vault>/<item>/<section>/<field_name> (or op://…) reference.
 func Parse(ref string) (SecretRef, error) {
-	if !IsRef(ref) {
-		return SecretRef{}, fmt.Errorf("not a jingui reference: %q", ref)
+	prefix := matchedPrefix(ref)
+	if prefix == "" {
+		return SecretRef{}, fmt.Errorf("not a secret reference: %q", ref)
 	}
 
-	body := strings.TrimPrefix(ref, refPrefix)
+	body := strings.TrimPrefix(ref, prefix)
 	parts := strings.Split(body, "/")
 
 	switch len(parts) {
 	case 3:
 		if parts[0] == "" || parts[1] == "" || parts[2] == "" {
-			return SecretRef{}, fmt.Errorf("invalid jingui reference %q: expected jingui://<vault>/<item>/<field_name>", ref)
+			return SecretRef{}, fmt.Errorf("invalid reference %q: expected %s<vault>/<item>/<field_name>", ref, prefix)
 		}
 		return SecretRef{
 			Vault:     parts[0],
@@ -49,7 +67,7 @@ func Parse(ref string) (SecretRef, error) {
 		}, nil
 	case 4:
 		if parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
-			return SecretRef{}, fmt.Errorf("invalid jingui reference %q: expected jingui://<vault>/<item>/<section>/<field_name>", ref)
+			return SecretRef{}, fmt.Errorf("invalid reference %q: expected %s<vault>/<item>/<section>/<field_name>", ref, prefix)
 		}
 		return SecretRef{
 			Vault:     parts[0],
@@ -59,6 +77,6 @@ func Parse(ref string) (SecretRef, error) {
 			Raw:       ref,
 		}, nil
 	default:
-		return SecretRef{}, fmt.Errorf("invalid jingui reference %q: expected 3 or 4 path segments", ref)
+		return SecretRef{}, fmt.Errorf("invalid reference %q: expected 3 or 4 path segments", ref)
 	}
 }
