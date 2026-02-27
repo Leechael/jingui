@@ -272,6 +272,34 @@ curl -s -X POST "$SERVER/v1/instances" \
 - HTTP 201
 - Returned `fid` matches the FID shown in B3 status output
 
+### A6b. Update TEE Instance (Optional)
+
+Update `bound_attestation_app_id` or `label` on an existing instance without deleting and re-registering:
+
+```bash
+FID="<FID from B3>"
+NEW_ATTESTATION_APP_ID="<new 40-char hex value>"
+
+curl -s -X PUT "$SERVER/v1/instances/$FID" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d "$(jq -n \
+    --arg attestation "$NEW_ATTESTATION_APP_ID" \
+    --arg label "updated-label" \
+    '{bound_attestation_app_id:$attestation, label:$label}'
+  )"
+```
+
+**Expected response:**
+
+```json
+{"fid":"2f4e9d...","status":"updated"}
+```
+
+**Check ✓**:
+- HTTP 200
+- Verify via `GET /v1/instances/$FID` that `bound_attestation_app_id` and `label` reflect the new values
+
 ### A7. Challenge Endpoint Smoke Test (Optional)
 
 `/v1/secrets/fetch` now requires challenge-response proof (`challenge_id` + `challenge_response`).
@@ -561,6 +589,7 @@ curl -s -X DELETE \
 | A3 | Register App (with admin token) | 201 created | ☐ |
 | A4 | OAuth authorization | authorized + email | ☐ |
 | A6 | Register TEE Instance | 201 registered, FID matches | ☐ |
+| A6b | Update TEE Instance | 200 updated, GET reflects new values | ☐ |
 | A7 | challenge endpoint smoke test | returns challenge_id + challenge | ☐ |
 | B2 | Binary version | linux/amd64 | ☐ |
 | B3 | `jingui status` | FID/public_key printed from provisioned `.appkeys.json` | ☐ |

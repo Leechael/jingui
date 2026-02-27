@@ -209,6 +209,7 @@ CREATE TABLE tee_instances (
     fid TEXT PRIMARY KEY,
     public_key BYTEA NOT NULL UNIQUE,
     bound_app_id TEXT NOT NULL REFERENCES apps(app_id),
+    bound_attestation_app_id TEXT NOT NULL DEFAULT '',
     bound_item TEXT NOT NULL,
     label TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -239,6 +240,7 @@ The server should expose both gRPC and REST APIs.
 | `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | Human admin | Write vault item secret (`vault`/`item`). |
 | `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE client** | **Core API**. TEE instance batch-fetches encrypted credentials based on bound identity. |
 | `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / ops script | Register TEE instance and bind vault/item identity. |
+| `InstanceService` | `UpdateInstance` | `PUT /v1/instances/{fid}` | Human admin | Update `bound_attestation_app_id` and `label` on an existing instance. |
 
 #### Core API flow: `FetchSecrets`
 

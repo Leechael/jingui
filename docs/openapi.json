@@ -309,7 +309,7 @@
     },
     "/v1/instances/{fid}": {
       "parameters": [
-        { "name": "fid", "in": "path", "required": true, "schema": { "type": "string" } }
+        { "name": "fid", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Fingerprint ID — hex(SHA1(public_key)), 40 hex characters" }
       ],
       "get": {
         "summary": "Get instance",

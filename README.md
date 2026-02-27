@@ -166,11 +166,14 @@ docker build --target client -t jingui .
 
 ### Instance management
 
+FID (Fingerprint ID) = `hex(SHA1(public_key))` — a 40-char hex identifier derived from the instance's X25519 public key.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/v1/instances` | Register a TEE instance (public key + binding) |
 | GET | `/v1/instances` | List registered TEE instances |
 | GET | `/v1/instances/:fid` | Get instance details |
+| PUT | `/v1/instances/:fid` | Update `bound_attestation_app_id` and `label` |
 | DELETE | `/v1/instances/:fid` | Delete an instance |
 
 ### Secret management
