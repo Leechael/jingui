@@ -1,3 +1,11 @@
+## v0.1.3 (2026-02-27)
+
+- fix: restore 403 for vault mismatch in BDD test
+- fix: update integration test to expect 404 for wrong item
+- docs: add op:// scheme to docs, fix status codes in API docs
+- fix: return 404 instead of 403 for item/field/vault not found
+- feat: update release command with progress comment lifecycle
+
 ## v0.1.3-beta.1 (2026-02-27)
 
 - feat: add op:// URI scheme as alias for jingui://
