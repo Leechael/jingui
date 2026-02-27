@@ -1,3 +1,9 @@
+## v0.1.2-alpha.7 (2026-02-27)
+
+- fix: pin SQLite connection for PRAGMA + migration atomicity
+- security: harden RA-TLS attestation identity binding
+- refactor: rename user_id → item and user_secrets → vault_items
+
 ## Unreleased
 
 - refactor: rename `user_id` → `item`, `user_secrets` → `vault_items`, `/v1/user-secrets` → `/v1/secrets`
