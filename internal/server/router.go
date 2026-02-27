@@ -11,6 +11,10 @@ import (
 func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 	r := gin.Default()
 
+	if len(cfg.CORSOrigins) > 0 {
+		r.Use(CORS(cfg.CORSOrigins))
+	}
+
 	r.GET("/", func(c *gin.Context) {
 		c.String(200, "ok")
 	})
