@@ -39,21 +39,25 @@ func (v *RATLSVerifier) Verify(_ context.Context, b Bundle) (VerifiedIdentity, e
 		return VerifiedIdentity{}, fmt.Errorf("RA-TLS certificate verification failed: %w", err)
 	}
 
-	extractedAppID := extractAppIDFromCert(cert)
-	if extractedAppID != "" && strings.TrimSpace(b.AppID) != "" && extractedAppID != strings.TrimSpace(b.AppID) {
-		return VerifiedIdentity{}, fmt.Errorf("attestation app_id mismatch between certificate and bundle")
-	}
-	if extractedAppID == "" {
-		extractedAppID = strings.TrimSpace(b.AppID)
+	// Only trust app_id extracted from the verified certificate extension.
+	// Do NOT fall back to the self-reported b.AppID — it is unverified.
+	certAppID := extractAppIDFromCert(cert)
+	if certAppID != "" && strings.TrimSpace(b.AppID) != "" && certAppID != strings.TrimSpace(b.AppID) {
+		return VerifiedIdentity{}, fmt.Errorf("attestation app_id mismatch between certificate (%q) and bundle (%q)", certAppID, strings.TrimSpace(b.AppID))
 	}
 
 	if result != nil {
 		logRATLSMeasurements(result)
 	}
-	logx.Debugf("ratls.identity cert_app_id=%q bundle_app_id=%q resolved_app_id=%q instance_id=%q device_id=%q", extractAppIDFromCert(cert), strings.TrimSpace(b.AppID), extractedAppID, b.Instance, b.DeviceID)
+	logx.Debugf("ratls.identity cert_app_id=%q bundle_app_id=%q instance_id=%q device_id=%q", certAppID, strings.TrimSpace(b.AppID), b.Instance, b.DeviceID)
 
 	return VerifiedIdentity{
-		AppID:      extractedAppID,
+		AppID: certAppID,
+		// NOTE: InstanceID and DeviceID are self-reported by the peer
+		// (from dstack Info() RPC). They are NOT extracted from the
+		// verified attestation certificate and should be treated as
+		// unverified claims. They are included here for logging/diagnostics
+		// only and MUST NOT be used for authorization decisions.
 		InstanceID: b.Instance,
 		DeviceID:   b.DeviceID,
 	}, nil

@@ -178,10 +178,15 @@ func HandleIssueChallenge(store *db.Store, strict bool, verifier attestation.Ver
 			identity, err := verifier.Verify(c.Request.Context(), *req.ClientAttestation)
 			if err != nil {
 				logx.Warnf("ratls.server.challenge rejected: verify failed fid=%s err=%v", req.FID, err)
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "client RA verification failed: " + err.Error()})
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "client attestation verification failed"})
 				return
 			}
-			if identity.AppID != "" && identity.AppID != inst.BoundAttestationAppID {
+			if identity.AppID == "" {
+				logx.Warnf("ratls.server.challenge rejected: verified cert missing app_id extension fid=%s", req.FID)
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "client attestation certificate does not contain app_id"})
+				return
+			}
+			if identity.AppID != inst.BoundAttestationAppID {
 				logx.Warnf("ratls.server.challenge rejected: verified app_id mismatch fid=%s verified_app_id=%s bound_attestation_app_id=%s", req.FID, identity.AppID, inst.BoundAttestationAppID)
 				c.JSON(http.StatusForbidden, gin.H{"error": "client RA app_id mismatch"})
 				return

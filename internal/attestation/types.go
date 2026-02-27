@@ -15,7 +15,13 @@ type Bundle struct {
 // VerifiedIdentity is the normalized identity extracted from a verified
 // attestation bundle.
 type VerifiedIdentity struct {
-	AppID      string
+	// AppID is cryptographically verified — extracted from the RA-TLS
+	// certificate OID extension. Empty if the cert lacks the extension.
+	AppID string
+	// InstanceID is self-reported by the peer (NOT verified against the
+	// certificate). Use for logging/diagnostics only.
 	InstanceID string
-	DeviceID   string
+	// DeviceID is self-reported by the peer (NOT verified against the
+	// certificate). Use for logging/diagnostics only.
+	DeviceID string
 }

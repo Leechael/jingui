@@ -185,20 +185,22 @@ func expectedServerAppID() string {
 }
 
 func verifyServerAttestation(bundle attestation.Bundle) error {
-	if strings.TrimSpace(bundle.AppID) == "" {
-		return fmt.Errorf("server_attestation.app_id is required in strict RA-TLS mode")
-	}
 	verifier := attestation.NewRATLSVerifier()
 	identity, err := verifier.Verify(context.Background(), bundle)
 	if err != nil {
 		return err
 	}
 	logx.Debugf("ratls.client.verify peer=server verified_app_id=%q instance_id=%q device_id=%q", identity.AppID, identity.InstanceID, identity.DeviceID)
+
+	// Always require verified app_id from the attestation certificate.
+	// identity.AppID is cryptographically verified (extracted from cert OID),
+	// not the self-reported bundle.AppID.
+	if identity.AppID == "" {
+		return fmt.Errorf("server attestation certificate does not contain verifiable app_id")
+	}
+
 	expected := expectedServerAppID()
 	if expected != "" {
-		if identity.AppID == "" {
-			return fmt.Errorf("server attestation did not provide verifiable app_id")
-		}
 		if identity.AppID != expected {
 			return fmt.Errorf("server attestation app_id mismatch: expected %q got %q", expected, identity.AppID)
 		}
@@ -251,14 +253,28 @@ func CheckInstance(serverURL, fid string, allowInsecure bool) error {
 	if !strings.HasPrefix(serverURL, "https://") && !allowInsecure {
 		return fmt.Errorf("server URL %q is not HTTPS; use --insecure to allow plaintext HTTP", serverURL)
 	}
+	strict := ratlsStrictEnabled()
 	var clientAtt *attestation.Bundle
-	if ratlsStrictEnabled() {
+	if strict {
 		bundle, err := collectLocalAttestation()
 		if err != nil {
 			return fmt.Errorf("collect local attestation: %w", err)
 		}
 		clientAtt = &bundle
 	}
-	_, err := requestChallenge(serverURL, fid, allowInsecure, clientAtt)
-	return err
+	challenge, err := requestChallenge(serverURL, fid, allowInsecure, clientAtt)
+	if err != nil {
+		return err
+	}
+	// In strict mode, verify server attestation before trusting the response.
+	// Without this check, client attestation would be sent to an unverified server.
+	if strict {
+		if challenge.ServerAttestation == nil {
+			return fmt.Errorf("challenge response missing server_attestation in strict RA-TLS mode")
+		}
+		if err := verifyServerAttestation(*challenge.ServerAttestation); err != nil {
+			return fmt.Errorf("verify server attestation: %w", err)
+		}
+	}
+	return nil
 }
