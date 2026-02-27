@@ -19,17 +19,14 @@ COPY . .
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG TARGETOS TARGETARCH
-ARG GO_TAGS=ratls
 ENV CGO_ENABLED=1
 ENV CGO_LDFLAGS=-L/usr/local/lib
 
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-      -tags "${GO_TAGS}" \
       -ldflags "-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}" \
       -o /out/jingui ./cmd/jingui
 
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-      -tags "${GO_TAGS}" \
       -ldflags "-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}" \
       -o /out/jingui-server ./cmd/jingui-server
 

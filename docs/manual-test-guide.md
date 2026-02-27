@@ -21,9 +21,9 @@ make clean build
 bin/jingui --version        # → jingui ...
 bin/jingui-server -v        # → jingui-server ...
 
-# Build RA-TLS enabled binaries (required for strict attestation verification)
-go build -tags ratls -o bin/jingui ./cmd/jingui
-go build -tags ratls -o bin/jingui-server ./cmd/jingui-server
+# Build binaries (requires dcap-qvl static library for RA-TLS)
+go build -o bin/jingui ./cmd/jingui
+go build -o bin/jingui-server ./cmd/jingui-server
 
 # Cross-compile linux/amd64 client for TDX
 make build-client-linux-amd64

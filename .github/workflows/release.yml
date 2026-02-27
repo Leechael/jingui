@@ -30,7 +30,7 @@ jobs:
           echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
           echo "CGO_LDFLAGS=-L/tmp/dcap-qvl/target/release" >> "$GITHUB_ENV"
 
-      - name: Build linux/amd64 binaries (RA-TLS)
+      - name: Build linux/amd64 binaries
         env:
           GOOS: linux
           GOARCH: amd64
@@ -38,8 +38,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           COMMIT="$(git rev-parse --short HEAD)"
           LDFLAGS="-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}"
-          go build -tags ratls -ldflags "${LDFLAGS}" -o jingui-linux-amd64 ./cmd/jingui
-          go build -tags ratls -ldflags "${LDFLAGS}" -o jingui-server-linux-amd64 ./cmd/jingui-server
+          go build -ldflags "${LDFLAGS}" -o jingui-linux-amd64 ./cmd/jingui
+          go build -ldflags "${LDFLAGS}" -o jingui-server-linux-amd64 ./cmd/jingui-server
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -126,7 +126,6 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
-            GO_TAGS=ratls
             DCAP_QVL_REF=c201e5e2b312
 
       - name: Docker metadata (client)
@@ -151,5 +150,4 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
-            GO_TAGS=ratls
             DCAP_QVL_REF=c201e5e2b312

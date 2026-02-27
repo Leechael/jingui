@@ -165,11 +165,6 @@ jobs:
       - name: BDD tests
         run: go test -tags bdd ./... -v
 
-      - name: RA-TLS build sanity check
-        run: |
-          go build -tags ratls ./cmd/jingui
-          go build -tags ratls ./cmd/jingui-server
-
       # ── Version bump ─────────────────────────────────────────────────
       - name: Determine version
         id: version
@@ -180,16 +175,16 @@ jobs:
           echo "Resolved version: ${NEW_VERSION}"
 
       # ── Cross-compile ────────────────────────────────────────────────
-      - name: Build linux/amd64 binaries (RA-TLS)
+      - name: Build linux/amd64 binaries
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           LDFLAGS="-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}"
 
-          echo "Building linux/amd64 with -tags ratls..."
-          GOOS=linux GOARCH=amd64 go build -tags ratls -ldflags "${LDFLAGS}" \
+          echo "Building linux/amd64..."
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" \
             -o "dist/jingui-linux-amd64" ./cmd/jingui
-          GOOS=linux GOARCH=amd64 go build -tags ratls -ldflags "${LDFLAGS}" \
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" \
             -o "dist/jingui-server-linux-amd64" ./cmd/jingui-server
 
           echo "Built binaries:"
@@ -341,7 +336,6 @@ jobs:
           build-args: |
             VERSION=${{ needs.release.outputs.version }}
             COMMIT=${{ github.sha }}
-            GO_TAGS=ratls
             DCAP_QVL_REF=c201e5e2b312
 
       - name: Docker metadata (client)
@@ -365,5 +359,4 @@ jobs:
           build-args: |
             VERSION=${{ needs.release.outputs.version }}
             COMMIT=${{ github.sha }}
-            GO_TAGS=ratls
             DCAP_QVL_REF=c201e5e2b312

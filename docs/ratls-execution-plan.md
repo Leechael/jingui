@@ -36,7 +36,7 @@ Enable strict, bidirectional RA validation in Jingui secret handshake flow while
 - [x] Build `client_attestation` payload from `app_cert` + `tcb_info`
 
 ### W3 - Server Verifier ✅
-- [x] Integrate dcap-qvl and RA cert/quote parser (`-tags ratls`)
+- [x] Integrate dcap-qvl and RA cert/quote parser
 - [x] Verify strict flow gates and challenge RA state
 - [x] Persist challenge verification state in memory store
 - [x] Extract/bind app_id from verified attestation certificate extensions (with bundle consistency checks)
@@ -50,7 +50,7 @@ Enable strict, bidirectional RA validation in Jingui secret handshake flow while
 - [x] Add strict negative tests (missing/mismatch attestation)
 - [x] Add strict flow state test (challenge->fetch gate)
 - [x] Update README / OpenAPI / manual guide
-- [x] Keep default CI path green without local dcap runtime via ratls build tags/stub split
+- [x] CI builds dcap-qvl and runs all tests with RA-TLS linked
 
 ## Notes
 

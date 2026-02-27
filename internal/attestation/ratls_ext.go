@@ -1,5 +1,3 @@
-//go:build ratls
-
 package attestation
 
 import (

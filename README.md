@@ -133,20 +133,13 @@ Examples:
 
 ## Building
 
+RA-TLS attestation verification requires the dcap-qvl static library (built from Rust). CI builds it automatically; for local development see `scripts/build-dcap-qvl.sh` or the Dockerfile.
+
 ```bash
-make build          # current platform
+make build          # current platform (requires dcap-qvl)
 make build-all      # cross-compile all 8 binaries (2 × 4 platforms)
 make ci             # lint + test + bdd
 ```
-
-RA-TLS verifier path (dcap-qvl linked build):
-
-```bash
-go build -tags ratls -o bin/jingui-server ./cmd/jingui-server
-go build -tags ratls -o bin/jingui ./cmd/jingui
-```
-
-> Without `-tags ratls`, attestation verifier runs in stub mode and strict RA-TLS requests will fail closed.
 
 Docker:
 

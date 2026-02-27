@@ -1,5 +1,3 @@
-//go:build ratls
-
 package attestation
 
 import (
@@ -14,9 +12,6 @@ import (
 	dstackratls "github.com/Dstack-TEE/dstack/sdk/go/ratls"
 	"github.com/aspect-build/jingui/internal/logx"
 )
-
-// RATLSAvailable reports whether RA-TLS verification is compiled in.
-func RATLSAvailable() bool { return true }
 
 // RATLSVerifier verifies attestation bundles using RA-TLS certificate extensions.
 type RATLSVerifier struct{}
