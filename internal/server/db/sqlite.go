@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -20,13 +21,18 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Enable WAL mode for better concurrency
+	// SQLite PRAGMAs like foreign_keys and journal_mode are per-connection.
+	// Limit pool to 1 connection so all PRAGMAs apply consistently and
+	// migrations can safely toggle foreign_keys on the same connection.
+	db.SetMaxOpenConns(1)
+
+	// Enable WAL mode for better concurrency (persistent, stored in DB file)
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("set WAL mode: %w", err)
 	}
 
-	// Enable foreign key enforcement (off by default in SQLite)
+	// Enable foreign key enforcement (off by default in SQLite, per-connection)
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
@@ -121,14 +127,25 @@ func (s *Store) upgradeVaultItemsSchema() error {
 		return nil // fresh DB with vault_items, nothing to migrate
 	}
 
+	// Pin a single connection so PRAGMA foreign_keys=OFF and the transaction
+	// are guaranteed to execute on the same connection. SQLite PRAGMAs are
+	// per-connection; without pinning, the pool could dispatch them to
+	// different connections.
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("pin connection for migration: %w", err)
+	}
+	defer conn.Close()
+
 	// Must disable FK checks before table recreation.
 	// Use defer to guarantee re-enabling on any exit path.
-	if _, err := s.db.Exec("PRAGMA foreign_keys=OFF"); err != nil {
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
 		return fmt.Errorf("disable foreign keys for migration: %w", err)
 	}
-	defer s.db.Exec("PRAGMA foreign_keys=ON")
+	defer conn.ExecContext(ctx, "PRAGMA foreign_keys=ON")
 
-	tx, err := s.db.Begin()
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin vault_items migration: %w", err)
 	}
