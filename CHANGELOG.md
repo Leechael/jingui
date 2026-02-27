@@ -1,3 +1,9 @@
+## v0.1.3-beta.1 (2026-02-27)
+
+- feat: add op:// URI scheme as alias for jingui://
+- Release v0.1.2
+- docs: add PUT /v1/instances/:fid to all docs, clarify FID meaning
+
 ## v0.1.2 (2026-02-27)
 
 - docs: add PUT /v1/instances/:fid to all docs, clarify FID meaning
