@@ -88,6 +88,20 @@ func (s *Store) DeleteInstance(fid string) (bool, error) {
 	return n > 0, nil
 }
 
+// UpdateInstance updates the bound_attestation_app_id and label for a TEE instance.
+// Returns false if no row matched the given FID.
+func (s *Store) UpdateInstance(fid, boundAttestationAppID, label string) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE tee_instances SET bound_attestation_app_id = ?, label = ? WHERE fid = ?`,
+		boundAttestationAppID, label, fid,
+	)
+	if err != nil {
+		return false, fmt.Errorf("update instance: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // UpdateLastUsed updates the last_used_at timestamp for a TEE instance.
 func (s *Store) UpdateLastUsed(fid string) error {
 	_, err := s.db.Exec(

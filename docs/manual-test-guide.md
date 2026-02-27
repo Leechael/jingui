@@ -236,13 +236,18 @@ Send the **Public Key** to operator and continue Part A at A6.
 
 ### A6. Register TEE Instance
 
-Use the TDX-generated public key and the OAuth email from A4:
+Use the TDX-generated public key and the OAuth email from A4.
+
+`bound_attestation_app_id` is a hex string identifying the RA-TLS application identity
+(e.g. SHA-1 of the app certificate). In production this comes from the TEE attestation
+report; for manual testing use any 40-char hex value:
 
 ```bash
 SERVER="http://<SERVER_IP>:8080"
 ADMIN_TOKEN="<Admin Token generated in A1>"
 PUBLIC_KEY="<Public Key from B3>"
 EMAIL="<Authorized email from A4>"
+ATTESTATION_APP_ID="e2215b69c6f4e3aa0584a60fda044bfe1a133ff9"
 
 curl -s -X POST "$SERVER/v1/instances" \
   -H 'Content-Type: application/json' \
@@ -250,9 +255,10 @@ curl -s -X POST "$SERVER/v1/instances" \
   -d "$(jq -n \
     --arg pk "$PUBLIC_KEY" \
     --arg app "gmail-app" \
+    --arg attestation "$ATTESTATION_APP_ID" \
     --arg user "$EMAIL" \
     --arg label "tdx-test-1" \
-    '{public_key:$pk, bound_vault:$app, bound_attestation_app_id:$app, bound_item:$user, label:$label}'
+    '{public_key:$pk, bound_vault:$app, bound_attestation_app_id:$attestation, bound_item:$user, label:$label}'
   )"
 ```
 

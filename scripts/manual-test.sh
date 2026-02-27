@@ -17,6 +17,7 @@ BASE="http://localhost:$PORT"
 MASTER_KEY=$(openssl rand -hex 32)
 ADMIN_TOKEN="manual-test-admin-token-$(openssl rand -hex 8)"
 AUTH="Authorization: Bearer $ADMIN_TOKEN"
+ATTESTATION_APP_ID="e2215b69c6f4e3aa0584a60fda044bfe1a133ff9"
 
 pass=0
 fail=0
@@ -235,7 +236,7 @@ HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
   -d "{
     \"public_key\": \"$PUB_KEY\",
     \"bound_vault\": \"my-gmail\",
-    \"bound_attestation_app_id\": \"my-gmail\",
+    \"bound_attestation_app_id\": \"$ATTESTATION_APP_ID\",
     \"bound_item\": \"alice@example.com\",
     \"label\": \"manual-test\"
   }")
@@ -258,6 +259,39 @@ echo "--- 4.4 Get instance detail ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
   "$BASE/v1/instances/$FID" -H "$AUTH")
 check "GET /v1/instances/$FID → 200" "200" "$HTTP_CODE"
+
+echo ""
+echo "--- 4.5 Update instance (PUT) ---"
+UPDATED_APP_ID="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
+  -X PUT "$BASE/v1/instances/$FID" -H "$AUTH" -H "Content-Type: application/json" \
+  -d "{
+    \"bound_attestation_app_id\": \"$UPDATED_APP_ID\",
+    \"label\": \"updated-label\"
+  }")
+check "PUT /v1/instances/$FID → 200" "200" "$HTTP_CODE"
+VAL=$(json_val "$WORKDIR/resp.json" "['status']")
+check "  status = updated" "updated" "$VAL"
+
+echo ""
+echo "--- 4.6 Verify update via GET ---"
+HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
+  "$BASE/v1/instances/$FID" -H "$AUTH")
+check "GET /v1/instances/$FID → 200" "200" "$HTTP_CODE"
+VAL=$(json_val "$WORKDIR/resp.json" "['bound_attestation_app_id']")
+check "  bound_attestation_app_id updated" "$UPDATED_APP_ID" "$VAL"
+VAL=$(json_val "$WORKDIR/resp.json" "['label']")
+check "  label updated" "updated-label" "$VAL"
+
+echo ""
+echo "--- 4.7 Revert instance to original attestation ID ---"
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X PUT "$BASE/v1/instances/$FID" -H "$AUTH" -H "Content-Type: application/json" \
+  -d "{
+    \"bound_attestation_app_id\": \"$ATTESTATION_APP_ID\",
+    \"label\": \"manual-test\"
+  }")
+check "PUT revert → 200" "200" "$HTTP_CODE"
 
 ########################################################################
 echo ""
@@ -387,7 +421,7 @@ curl -s -o /dev/null -X PUT "$BASE/v1/credentials/cascade-app" -H "$AUTH" -H "Co
   -d '{"item":"bob@example.com","secrets":{"refresh_token":"tok"}}'
 # Reuse same client key
 curl -s -o /dev/null -X POST "$BASE/v1/instances" -H "$AUTH" -H "Content-Type: application/json" \
-  -d "{\"public_key\":\"$PUB_KEY\",\"bound_vault\":\"cascade-app\",\"bound_attestation_app_id\":\"cascade-app\",\"bound_item\":\"bob@example.com\"}"
+  -d "{\"public_key\":\"$PUB_KEY\",\"bound_vault\":\"cascade-app\",\"bound_attestation_app_id\":\"$ATTESTATION_APP_ID\",\"bound_item\":\"bob@example.com\"}"
 echo "  Created cascade-app → bob@example.com → instance"
 
 echo ""

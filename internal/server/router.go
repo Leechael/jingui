@@ -32,6 +32,7 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 		v1.POST("/instances", admin, handler.HandleRegisterInstance(store))
 		v1.GET("/instances", admin, handler.HandleListInstances(store))
 		v1.GET("/instances/:fid", admin, handler.HandleGetInstance(store))
+		v1.PUT("/instances/:fid", admin, handler.HandleUpdateInstance(store))
 		v1.DELETE("/instances/:fid", admin, handler.HandleDeleteInstance(store))
 
 		v1.GET("/secrets", admin, handler.HandleListSecrets(store))

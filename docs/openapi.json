@@ -59,6 +59,14 @@
           "label": { "type": "string" }
         }
       },
+      "InstanceUpdateRequest": {
+        "type": "object",
+        "required": ["bound_attestation_app_id"],
+        "properties": {
+          "bound_attestation_app_id": { "type": "string", "description": "Hex-encoded RA-TLS identity (e.g. SHA-1 of app certificate)" },
+          "label": { "type": "string" }
+        }
+      },
       "InstanceView": {
         "type": "object",
         "properties": {
@@ -315,6 +323,36 @@
               }
             }
           },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "put": {
+        "summary": "Update instance",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/InstanceUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["updated"] },
+                    "fid": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       },

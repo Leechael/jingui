@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/aspect-build/jingui/internal/server/db"
@@ -63,5 +64,34 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusCreated, gin.H{"fid": fid, "status": "registered"})
+	}
+}
+
+type updateInstanceRequest struct {
+	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
+	Label                 string `json:"label"`
+}
+
+// HandleUpdateInstance handles PUT /v1/instances/:fid.
+func HandleUpdateInstance(store *db.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		fid := c.Param("fid")
+		var req updateInstanceRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		updated, err := store.UpdateInstance(fid, req.BoundAttestationAppID, req.Label)
+		if err != nil {
+			log.Printf("UpdateInstance(%q) error: %v", fid, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if !updated {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "updated", "fid": fid})
 	}
 }
