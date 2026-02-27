@@ -97,7 +97,7 @@ func TestEndToEnd(t *testing.T) {
 	// Step 1: Register an app (with admin token)
 	credJSON := `{"installed":{"client_id":"test-client-id","client_secret":"test-client-secret","redirect_uris":["http://localhost"]}}`
 	appReq := map[string]interface{}{
-		"app_id":           "gmail-app",
+		"vault":            "gmail-app",
 		"name":             "Test Gmail App",
 		"service_type":     "gmail",
 		"required_scopes":  "https://mail.google.com/",
@@ -114,7 +114,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Step 2: Insert user secret (simulating OAuth callback)
+	// Step 2: Insert vault item (simulating OAuth callback)
 	tokenJSON, _ := json.Marshal(map[string]string{
 		"refresh_token": "test-refresh-token-value",
 	})
@@ -122,13 +122,13 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptAtRest: %v", err)
 	}
-	err = store.UpsertUserSecret(&db.UserSecret{
-		AppID:           "gmail-app",
-		UserID:          "user@example.com",
+	err = store.UpsertVaultItem(&db.VaultItem{
+		Vault:           "gmail-app",
+		Item:            "user@example.com",
 		SecretEncrypted: encrypted,
 	})
 	if err != nil {
-		t.Fatalf("UpsertUserSecret: %v", err)
+		t.Fatalf("UpsertVaultItem: %v", err)
 	}
 
 	// Step 3: Register TEE instance (with admin token)
@@ -141,10 +141,11 @@ func TestEndToEnd(t *testing.T) {
 	fid := hex.EncodeToString(h[:])
 
 	instReq := map[string]string{
-		"public_key":    teePubHex,
-		"bound_app_id":  "gmail-app",
-		"bound_user_id": "user@example.com",
-		"label":         "test-tee",
+		"public_key":               teePubHex,
+		"bound_vault":              "gmail-app",
+		"bound_attestation_app_id": "gmail-app",
+		"bound_item":               "user@example.com",
+		"label":                    "test-tee",
 	}
 	instBody, _ := json.Marshal(instReq)
 	resp, err = adminRequest("POST", ts.URL+"/v1/instances", instBody)
@@ -232,7 +233,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 
-	// Step 6: Access control — wrong app_id → 403
+	// Step 6: Access control — wrong vault → 403
 	badReq, _ := json.Marshal(map[string]interface{}{
 		"fid":               fid,
 		"secret_references": []string{"jingui://other-app/user@example.com/client_id"},
@@ -248,11 +249,11 @@ func TestEndToEnd(t *testing.T) {
 	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badReq))
 	if resp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(resp.Body)
-		t.Errorf("expected 403 for wrong app_id, got %d: %s", resp.StatusCode, body)
+		t.Errorf("expected 403 for wrong vault, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 
-	// Step 7: Access control — wrong user_id → 403
+	// Step 7: Access control — wrong item → 403
 	badReq2, _ := json.Marshal(map[string]interface{}{
 		"fid":               fid,
 		"secret_references": []string{"jingui://gmail-app/other@example.com/client_id"},
@@ -268,7 +269,7 @@ func TestEndToEnd(t *testing.T) {
 	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badReq2))
 	if resp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(resp.Body)
-		t.Errorf("expected 403 for wrong user_id, got %d: %s", resp.StatusCode, body)
+		t.Errorf("expected 403 for wrong item, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 
@@ -298,7 +299,7 @@ func TestListApps(t *testing.T) {
 	// Create an app then list
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
@@ -310,8 +311,8 @@ func TestListApps(t *testing.T) {
 	if len(apps) != 1 {
 		t.Fatalf("expected 1 app, got %d", len(apps))
 	}
-	if apps[0]["app_id"] != "app1" {
-		t.Errorf("expected app_id=app1, got %v", apps[0]["app_id"])
+	if apps[0]["vault"] != "app1" {
+		t.Errorf("expected app_id=app1, got %v", apps[0]["vault"])
 	}
 }
 
@@ -328,7 +329,7 @@ func TestGetApp(t *testing.T) {
 	// Create then get
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
@@ -341,8 +342,8 @@ func TestGetApp(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	if body["app_id"] != "app1" {
-		t.Errorf("expected app_id=app1, got %v", body["app_id"])
+	if body["vault"] != "app1" {
+		t.Errorf("expected app_id=app1, got %v", body["vault"])
 	}
 	if body["has_credentials"] != true {
 		t.Errorf("expected has_credentials=true, got %v", body["has_credentials"])
@@ -363,18 +364,18 @@ func TestDeleteApp_HTTP(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Create app with dependent secret → 409 without cascade
+	// Create app with dependent item → 409 without cascade
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
 	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1", nil)
@@ -410,7 +411,7 @@ func TestDeleteApp_Simple(t *testing.T) {
 
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ := adminRequest("POST", ts.URL+"/v1/apps", appReq)
@@ -440,26 +441,27 @@ func TestListInstances_HTTP(t *testing.T) {
 		t.Fatalf("expected 0 instances, got %d", len(instances))
 	}
 
-	// Create app + secret + instance, then list
+	// Create app + item + instance, then list
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
-		"bound_user_id": "u@example.com", "label": "test",
+		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
+		"bound_attestation_app_id": "app1",
+		"bound_item":               "u@example.com", "label": "test",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	resp.Body.Close()
@@ -490,23 +492,24 @@ func TestGetInstance_HTTP(t *testing.T) {
 	// Create and get
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
-		"bound_user_id": "u@example.com",
+		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
+		"bound_attestation_app_id": "app1",
+		"bound_item":               "u@example.com",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	var instResp map[string]string
@@ -542,23 +545,24 @@ func TestDeleteInstance_HTTP(t *testing.T) {
 	// Create and delete
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
-		"bound_user_id": "u@example.com",
+		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
+		"bound_attestation_app_id": "app1",
+		"bound_item":               "u@example.com",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	var instResp map[string]string
@@ -586,11 +590,11 @@ func TestDeleteInstance_HTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
-func TestListUserSecrets_HTTP(t *testing.T) {
+func TestListSecrets_HTTP(t *testing.T) {
 	ts, store, masterKey := setupTestServer(t)
 
 	// Empty list
-	resp, _ := adminRequest("GET", ts.URL+"/v1/user-secrets", nil)
+	resp, _ := adminRequest("GET", ts.URL+"/v1/secrets", nil)
 	var secrets []map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&secrets)
 	resp.Body.Close()
@@ -601,11 +605,11 @@ func TestListUserSecrets_HTTP(t *testing.T) {
 		t.Fatalf("expected 0 secrets, got %d", len(secrets))
 	}
 
-	// Create app + secrets
+	// Create app + items
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	for _, appID := range []string{"app1", "app2"} {
 		appReq, _ := json.Marshal(map[string]interface{}{
-			"app_id": appID, "name": appID, "service_type": "gmail",
+			"vault": appID, "name": appID, "service_type": "gmail",
 			"credentials_json": json.RawMessage(credJSON),
 		})
 		resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
@@ -613,12 +617,12 @@ func TestListUserSecrets_HTTP(t *testing.T) {
 	}
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{AppID: "app1", UserID: "u1@example.com", SecretEncrypted: encrypted})
-	store.UpsertUserSecret(&db.UserSecret{AppID: "app1", UserID: "u2@example.com", SecretEncrypted: encrypted})
-	store.UpsertUserSecret(&db.UserSecret{AppID: "app2", UserID: "u1@example.com", SecretEncrypted: encrypted})
+	store.UpsertVaultItem(&db.VaultItem{Vault: "app1", Item: "u1@example.com", SecretEncrypted: encrypted})
+	store.UpsertVaultItem(&db.VaultItem{Vault: "app1", Item: "u2@example.com", SecretEncrypted: encrypted})
+	store.UpsertVaultItem(&db.VaultItem{Vault: "app2", Item: "u1@example.com", SecretEncrypted: encrypted})
 
 	// List all
-	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets", nil)
+	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets", nil)
 	json.NewDecoder(resp.Body).Decode(&secrets)
 	resp.Body.Close()
 	if len(secrets) != 3 {
@@ -631,15 +635,15 @@ func TestListUserSecrets_HTTP(t *testing.T) {
 		}
 	}
 
-	// Filter by app_id
-	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets?app_id=app1", nil)
+	// Filter by vault
+	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets?vault=app1", nil)
 	json.NewDecoder(resp.Body).Decode(&secrets)
 	resp.Body.Close()
 	if len(secrets) != 2 {
 		t.Fatalf("expected 2 secrets for app1, got %d", len(secrets))
 	}
 
-	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets?app_id=app2", nil)
+	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets?vault=app2", nil)
 	json.NewDecoder(resp.Body).Decode(&secrets)
 	resp.Body.Close()
 	if len(secrets) != 1 {
@@ -647,11 +651,11 @@ func TestListUserSecrets_HTTP(t *testing.T) {
 	}
 }
 
-func TestGetUserSecret_HTTP(t *testing.T) {
+func TestGetSecret_HTTP(t *testing.T) {
 	ts, store, masterKey := setupTestServer(t)
 
 	// 404
-	resp, _ := adminRequest("GET", ts.URL+"/v1/user-secrets/app1/user1", nil)
+	resp, _ := adminRequest("GET", ts.URL+"/v1/secrets/app1/user1", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
@@ -660,26 +664,26 @@ func TestGetUserSecret_HTTP(t *testing.T) {
 	// Create and get
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
-	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets/app1/u@example.com", nil)
 	var body map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	if body["app_id"] != "app1" {
-		t.Errorf("expected app_id=app1, got %v", body["app_id"])
+	if body["vault"] != "app1" {
+		t.Errorf("expected vault=app1, got %v", body["vault"])
 	}
 	if body["has_secret"] != true {
 		t.Errorf("expected has_secret=true, got %v", body["has_secret"])
@@ -689,41 +693,42 @@ func TestGetUserSecret_HTTP(t *testing.T) {
 	}
 }
 
-func TestDeleteUserSecret_HTTP(t *testing.T) {
+func TestDeleteSecret_HTTP(t *testing.T) {
 	ts, store, masterKey := setupTestServer(t)
 
 	// 404
-	resp, _ := adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/user1", nil)
+	resp, _ := adminRequest("DELETE", ts.URL+"/v1/secrets/app1/user1", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Create app + secret + instance → 409 without cascade
+	// Create app + item + instance → 409 without cascade
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_app_id": "app1",
-		"bound_user_id": "u@example.com",
+		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
+		"bound_attestation_app_id": "app1",
+		"bound_item":               "u@example.com",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	resp.Body.Close()
 
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/secrets/app1/u@example.com", nil)
 	if resp.StatusCode != http.StatusConflict {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 409, got %d: %s", resp.StatusCode, body)
@@ -731,7 +736,7 @@ func TestDeleteUserSecret_HTTP(t *testing.T) {
 	resp.Body.Close()
 
 	// Cascade → 200
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/u@example.com?cascade=true", nil)
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/secrets/app1/u@example.com?cascade=true", nil)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
@@ -744,31 +749,31 @@ func TestDeleteUserSecret_HTTP(t *testing.T) {
 	}
 
 	// Verify gone
-	resp, _ = adminRequest("GET", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets/app1/u@example.com", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 }
 
-func TestDeleteUserSecret_Simple(t *testing.T) {
+func TestDeleteSecret_Simple(t *testing.T) {
 	ts, store, masterKey := setupTestServer(t)
 
 	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
 	appReq, _ := json.Marshal(map[string]interface{}{
-		"app_id": "app1", "name": "App 1", "service_type": "gmail",
+		"vault": "app1", "name": "App 1", "service_type": "gmail",
 		"credentials_json": json.RawMessage(credJSON),
 	})
 	resp, _ := adminRequest("POST", ts.URL+"/v1/apps", appReq)
 	resp.Body.Close()
 
 	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertUserSecret(&db.UserSecret{
-		AppID: "app1", UserID: "u@example.com", SecretEncrypted: encrypted,
+	store.UpsertVaultItem(&db.VaultItem{
+		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
 	})
 
 	// No dependents → simple delete works
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/user-secrets/app1/u@example.com", nil)
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/secrets/app1/u@example.com", nil)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
@@ -789,9 +794,9 @@ func TestAdminCRUD_RequiresAuth(t *testing.T) {
 		{"GET", "/v1/instances"},
 		{"GET", "/v1/instances/test"},
 		{"DELETE", "/v1/instances/test"},
-		{"GET", "/v1/user-secrets"},
-		{"GET", "/v1/user-secrets/app/user"},
-		{"DELETE", "/v1/user-secrets/app/user"},
+		{"GET", "/v1/secrets"},
+		{"GET", "/v1/secrets/app/user"},
+		{"DELETE", "/v1/secrets/app/user"},
 	}
 
 	for _, ep := range endpoints {
@@ -812,7 +817,7 @@ func TestAdminAuth_Rejected(t *testing.T) {
 
 	// POST /v1/apps without token → 401
 	appBody, _ := json.Marshal(map[string]interface{}{
-		"app_id": "x", "name": "x", "service_type": "x",
+		"vault": "x", "name": "x", "service_type": "x",
 		"credentials_json": json.RawMessage(`{"installed":{"client_id":"a","client_secret":"b"}}`),
 	})
 	resp, err := http.Post(ts.URL+"/v1/apps", "application/json", bytes.NewReader(appBody))
@@ -826,7 +831,7 @@ func TestAdminAuth_Rejected(t *testing.T) {
 
 	// POST /v1/instances without token → 401
 	instBody, _ := json.Marshal(map[string]string{
-		"public_key": "aa", "bound_app_id": "x", "bound_user_id": "x",
+		"public_key": "aa", "bound_vault": "x", "bound_attestation_app_id": "x", "bound_item": "x",
 	})
 	resp, err = http.Post(ts.URL+"/v1/instances", "application/json", bytes.NewReader(instBody))
 	if err != nil {

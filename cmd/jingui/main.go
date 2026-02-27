@@ -9,12 +9,12 @@ import (
 
 	"github.com/aspect-build/jingui/internal/client"
 	"github.com/aspect-build/jingui/internal/crypto"
+	"github.com/aspect-build/jingui/internal/logx"
 	"github.com/aspect-build/jingui/internal/refparser"
 	"github.com/aspect-build/jingui/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/curve25519"
 )
-
 
 // resolveServerURL returns the server URL from the flag or JINGUI_SERVER_URL env var.
 // Prints a warning to stderr when falling back to the env var.
@@ -39,12 +39,26 @@ func resolveServerURL(cmd *cobra.Command, flagValue string) (string, error) {
 const defaultAppkeysPath = "/dstack/.host-shared/.appkeys.json"
 
 func main() {
+	var (
+		verbose  bool
+		logLevel string
+	)
+
 	rootCmd := &cobra.Command{
-		Use:     "jingui",
-		Short:   "Jingui (金匮) - secure secret injection for TEE environments",
-		Version: version.Version,
+		Use:          "jingui",
+		Short:        "Jingui (金匮) - secure secret injection for TEE environments",
+		Version:      version.Version,
+		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Name() == "completion" {
+				return nil
+			}
+			return logx.Configure(logLevel, verbose)
+		},
 	}
 	rootCmd.SetVersionTemplate(version.String("jingui") + "\n")
+	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Enable verbose debug logs (same as --log-level debug)")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Log level: debug|info|warn|error (or JINGUI_LOG_LEVEL)")
 
 	rootCmd.AddCommand(newRunCmd())
 	rootCmd.AddCommand(newReadCmd())

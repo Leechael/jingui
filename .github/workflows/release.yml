@@ -18,6 +18,18 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build dcap-qvl static library
+        run: |
+          git clone https://github.com/Phala-Network/dcap-qvl.git /tmp/dcap-qvl
+          cd /tmp/dcap-qvl
+          git checkout c201e5e2b312
+          cargo build --release --features go
+          echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
+          echo "CGO_LDFLAGS=-L/tmp/dcap-qvl/target/release" >> "$GITHUB_ENV"
+
       - name: Build linux/amd64 binaries
         env:
           GOOS: linux
@@ -114,6 +126,7 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+            DCAP_QVL_REF=c201e5e2b312
 
       - name: Docker metadata (client)
         id: meta-client
@@ -137,3 +150,4 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+            DCAP_QVL_REF=c201e5e2b312

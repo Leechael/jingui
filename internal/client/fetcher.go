@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -13,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aspect-build/jingui/internal/attestation"
 	"github.com/aspect-build/jingui/internal/crypto"
+	"github.com/aspect-build/jingui/internal/logx"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -39,16 +42,34 @@ type fetchResponse struct {
 }
 
 type challengeRequest struct {
-	FID string `json:"fid"`
+	FID               string              `json:"fid"`
+	ClientAttestation *attestation.Bundle `json:"client_attestation,omitempty"`
 }
 
 type challengeResponse struct {
-	ChallengeID string `json:"challenge_id"`
-	Challenge   string `json:"challenge"`
+	ChallengeID       string              `json:"challenge_id"`
+	Challenge         string              `json:"challenge"`
+	ServerAttestation *attestation.Bundle `json:"server_attestation,omitempty"`
 }
 
 func normalizeServerURL(serverURL string) string {
 	return strings.TrimRight(serverURL, "/")
+}
+
+func ratlsStrictEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("JINGUI_RATLS_STRICT")))
+	if v == "" {
+		return true
+	}
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		// Fail-safe: unknown values keep strict mode enabled.
+		return true
+	}
 }
 
 func httpClient() *http.Client {
@@ -66,9 +87,30 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 		fmt.Fprintf(os.Stderr, "jingui: WARNING: communicating over plaintext HTTP (%s)\n", serverURL)
 	}
 
-	challenge, err := requestChallenge(serverURL, fid, allowInsecure)
+	strict := ratlsStrictEnabled()
+	var clientAtt *attestation.Bundle
+	if strict {
+		bundle, err := collectLocalAttestation()
+		if err != nil {
+			return nil, fmt.Errorf("collect local attestation: %w", err)
+		}
+		clientAtt = &bundle
+		logx.Debugf("ratls.client.challenge peer=client app_id=%q instance_id=%q device_id=%q", bundle.AppID, bundle.Instance, bundle.DeviceID)
+	}
+
+	challenge, err := requestChallenge(serverURL, fid, allowInsecure, clientAtt)
 	if err != nil {
 		return nil, err
+	}
+
+	if strict {
+		if challenge.ServerAttestation == nil {
+			return nil, fmt.Errorf("challenge response missing server_attestation in strict RA-TLS mode")
+		}
+		logx.Debugf("ratls.client.challenge peer=server received app_id=%q instance_id=%q device_id=%q", challenge.ServerAttestation.AppID, challenge.ServerAttestation.Instance, challenge.ServerAttestation.DeviceID)
+		if err := verifyServerAttestation(*challenge.ServerAttestation); err != nil {
+			return nil, fmt.Errorf("verify server attestation: %w", err)
+		}
 	}
 
 	challengeBlob, err := base64.StdEncoding.DecodeString(challenge.Challenge)
@@ -133,9 +175,43 @@ func Fetch(serverURL string, privateKey [32]byte, fid string, refs []string, all
 	return blobs, nil
 }
 
-func requestChallenge(serverURL, fid string, _ bool) (*challengeResponse, error) {
+func collectLocalAttestation() (attestation.Bundle, error) {
+	collector := attestation.NewDstackInfoCollector("")
+	return collector.Collect(context.Background())
+}
+
+func expectedServerAppID() string {
+	return strings.TrimSpace(os.Getenv("JINGUI_RATLS_EXPECT_SERVER_APP_ID"))
+}
+
+func verifyServerAttestation(bundle attestation.Bundle) error {
+	verifier := attestation.NewRATLSVerifier()
+	identity, err := verifier.Verify(context.Background(), bundle)
+	if err != nil {
+		return err
+	}
+	logx.Debugf("ratls.client.verify peer=server verified_app_id=%q instance_id=%q device_id=%q", identity.AppID, identity.InstanceID, identity.DeviceID)
+
+	// Always require verified app_id from the attestation certificate.
+	// identity.AppID is cryptographically verified (extracted from cert OID),
+	// not the self-reported bundle.AppID.
+	if identity.AppID == "" {
+		return fmt.Errorf("server attestation certificate does not contain verifiable app_id")
+	}
+
+	expected := expectedServerAppID()
+	if expected != "" {
+		if identity.AppID != expected {
+			return fmt.Errorf("server attestation app_id mismatch: expected %q got %q", expected, identity.AppID)
+		}
+		logx.Debugf("ratls.client.verify pin matched expected_server_app_id=%q", expected)
+	}
+	return nil
+}
+
+func requestChallenge(serverURL, fid string, _ bool, clientAtt *attestation.Bundle) (*challengeResponse, error) {
 	serverURL = normalizeServerURL(serverURL)
-	reqBody := challengeRequest{FID: fid}
+	reqBody := challengeRequest{FID: fid, ClientAttestation: clientAtt}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshal challenge request: %w", err)
@@ -177,6 +253,28 @@ func CheckInstance(serverURL, fid string, allowInsecure bool) error {
 	if !strings.HasPrefix(serverURL, "https://") && !allowInsecure {
 		return fmt.Errorf("server URL %q is not HTTPS; use --insecure to allow plaintext HTTP", serverURL)
 	}
-	_, err := requestChallenge(serverURL, fid, allowInsecure)
-	return err
+	strict := ratlsStrictEnabled()
+	var clientAtt *attestation.Bundle
+	if strict {
+		bundle, err := collectLocalAttestation()
+		if err != nil {
+			return fmt.Errorf("collect local attestation: %w", err)
+		}
+		clientAtt = &bundle
+	}
+	challenge, err := requestChallenge(serverURL, fid, allowInsecure, clientAtt)
+	if err != nil {
+		return err
+	}
+	// In strict mode, verify server attestation before trusting the response.
+	// Without this check, client attestation would be sent to an unverified server.
+	if strict {
+		if challenge.ServerAttestation == nil {
+			return fmt.Errorf("challenge response missing server_attestation in strict RA-TLS mode")
+		}
+		if err := verifyServerAttestation(*challenge.ServerAttestation); err != nil {
+			return fmt.Errorf("verify server attestation: %w", err)
+		}
+	}
+	return nil
 }

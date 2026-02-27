@@ -219,13 +219,13 @@ func HandleOAuthCallback(store *db.Store, masterKey [32]byte, baseURL string) gi
 			return
 		}
 
-		secret := &db.UserSecret{
-			AppID:           appID,
-			UserID:          email,
+		vi := &db.VaultItem{
+			Vault:           appID,
+			Item:            email,
 			SecretEncrypted: encrypted,
 		}
 
-		if err := store.UpsertUserSecret(secret); err != nil {
+		if err := store.UpsertVaultItem(vi); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store secret"})
 			return
 		}
@@ -329,13 +329,13 @@ func HandleDeviceAuth(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 				return
 			}
 
-			secret := &db.UserSecret{
-				AppID:           appID,
-				UserID:          email,
+			vi := &db.VaultItem{
+				Vault:           appID,
+				Item:            email,
 				SecretEncrypted: encrypted,
 			}
 
-			if err := store.UpsertUserSecret(secret); err != nil {
+			if err := store.UpsertVaultItem(vi); err != nil {
 				log.Printf("device flow: failed to store secret: app=%s error=%v", appID, err)
 				return
 			}

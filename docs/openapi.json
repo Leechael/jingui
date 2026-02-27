@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Jingui API",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "Current jingui-server API surface (implementation-aligned)"
   },
   "components": {
@@ -10,6 +10,118 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "AppRequest": {
+        "type": "object",
+        "required": ["vault", "name", "service_type", "credentials_json"],
+        "properties": {
+          "vault": { "type": "string" },
+          "name": { "type": "string" },
+          "service_type": { "type": "string" },
+          "required_scopes": { "type": "string" },
+          "credentials_json": {
+            "type": "object",
+            "description": "Must contain either an 'installed' or 'web' key"
+          }
+        }
+      },
+      "AppListItem": {
+        "type": "object",
+        "properties": {
+          "vault": { "type": "string" },
+          "name": { "type": "string" },
+          "service_type": { "type": "string" },
+          "required_scopes": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AppDetail": {
+        "type": "object",
+        "properties": {
+          "vault": { "type": "string" },
+          "name": { "type": "string" },
+          "service_type": { "type": "string" },
+          "required_scopes": { "type": "string" },
+          "has_credentials": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InstanceRequest": {
+        "type": "object",
+        "required": ["public_key", "bound_vault", "bound_attestation_app_id", "bound_item"],
+        "properties": {
+          "public_key": { "type": "string", "description": "64 hex characters (32 bytes)" },
+          "bound_vault": { "type": "string" },
+          "bound_attestation_app_id": { "type": "string" },
+          "bound_item": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      },
+      "InstanceUpdateRequest": {
+        "type": "object",
+        "required": ["bound_attestation_app_id"],
+        "properties": {
+          "bound_attestation_app_id": { "type": "string", "description": "Hex-encoded RA-TLS identity (e.g. SHA-1 of app certificate)" },
+          "label": { "type": "string" }
+        }
+      },
+      "InstanceView": {
+        "type": "object",
+        "properties": {
+          "fid": { "type": "string" },
+          "public_key": { "type": "string" },
+          "bound_vault": { "type": "string" },
+          "bound_attestation_app_id": { "type": "string" },
+          "bound_item": { "type": "string" },
+          "label": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "last_used_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "SecretListItem": {
+        "type": "object",
+        "properties": {
+          "vault": { "type": "string" },
+          "item": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SecretDetail": {
+        "type": "object",
+        "properties": {
+          "vault": { "type": "string" },
+          "item": { "type": "string" },
+          "has_secret": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CredentialsRequest": {
+        "type": "object",
+        "required": ["item", "secrets"],
+        "properties": {
+          "item": { "type": "string" },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "DebugPolicyRequest": {
+        "type": "object",
+        "required": ["allow_read_debug"],
+        "properties": {
+          "allow_read_debug": { "type": "boolean" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
       }
     }
   },
@@ -22,55 +134,511 @@
     },
 
     "/v1/apps": {
-      "post": { "summary": "Create app", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "Created" } } },
-      "get": { "summary": "List apps", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+      "post": {
+        "summary": "Create app",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AppRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "vault": { "type": "string" },
+                    "status": { "type": "string", "enum": ["created"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Vault already exists", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "get": {
+        "summary": "List apps",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/AppListItem" }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "/v1/apps/{app_id}": {
-      "put": { "summary": "Update app", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Updated" } } },
-      "get": { "summary": "Get app", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } },
-      "delete": { "summary": "Delete app", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Deleted" }, "409": { "description": "Has dependents" } } }
+      "parameters": [
+        { "name": "app_id", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "put": {
+        "summary": "Update app",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AppRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "vault": { "type": "string" },
+                    "status": { "type": "string", "enum": ["updated"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "get": {
+        "summary": "Get app",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppDetail" }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "delete": {
+        "summary": "Delete app",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "cascade", "in": "query", "schema": { "type": "string", "enum": ["true"] }, "description": "Set to 'true' to delete dependent secrets and instances" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["deleted"] },
+                    "vault": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Has dependents", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
     },
 
     "/v1/instances": {
-      "post": { "summary": "Register instance", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "Registered" } } },
-      "get": { "summary": "List instances", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+      "post": {
+        "summary": "Register instance",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/InstanceRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fid": { "type": "string" },
+                    "status": { "type": "string", "enum": ["registered"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Instance already exists", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "get": {
+        "summary": "List instances",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/InstanceView" }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "/v1/instances/{fid}": {
-      "get": { "summary": "Get instance", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } },
-      "delete": { "summary": "Delete instance", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Deleted" }, "404": { "description": "Not found" } } }
+      "parameters": [
+        { "name": "fid", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Fingerprint ID — hex(SHA1(public_key)), 40 hex characters" }
+      ],
+      "get": {
+        "summary": "Get instance",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InstanceView" }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "put": {
+        "summary": "Update instance",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/InstanceUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["updated"] },
+                    "fid": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "delete": {
+        "summary": "Delete instance",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["deleted"] },
+                    "fid": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
     },
 
-    "/v1/user-secrets": {
-      "get": { "summary": "List user secrets (metadata)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    "/v1/secrets": {
+      "get": {
+        "summary": "List secrets (metadata)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "vault", "in": "query", "schema": { "type": "string" }, "description": "Filter by vault name" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SecretListItem" }
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/v1/user-secrets/{app_id}/{user_id}": {
-      "get": { "summary": "Get user secret (metadata)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } },
-      "delete": { "summary": "Delete user secret", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Deleted" }, "409": { "description": "Has dependents" } } }
+    "/v1/secrets/{vault}/{item}": {
+      "parameters": [
+        { "name": "vault", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "item", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "summary": "Get secret (metadata)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SecretDetail" }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "delete": {
+        "summary": "Delete secret",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "cascade", "in": "query", "schema": { "type": "string", "enum": ["true"] }, "description": "Set to 'true' to delete dependent instances" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["deleted"] },
+                    "vault": { "type": "string" },
+                    "item": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Has dependents", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
     },
 
-    "/v1/debug-policy/{app_id}/{user_id}": {
-      "get": { "summary": "Get debug-read policy", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Policy" } } },
-      "put": { "summary": "Update debug-read policy", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Updated" } } }
+    "/v1/debug-policy/{vault}/{item}": {
+      "parameters": [
+        { "name": "vault", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "item", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "summary": "Get debug-read policy",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "vault": { "type": "string" },
+                    "item": { "type": "string" },
+                    "allow_read_debug": { "type": "boolean" },
+                    "source": { "type": "string", "description": "Present as 'default' when no explicit policy exists" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update debug-read policy",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DebugPolicyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["updated"] },
+                    "vault": { "type": "string" },
+                    "item": { "type": "string" },
+                    "allow_read_debug": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
     },
 
     "/v1/credentials/{app_id}": {
-      "put": { "summary": "Store direct credentials", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Stored" } } }
+      "parameters": [
+        { "name": "app_id", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "put": {
+        "summary": "Store direct credentials",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CredentialsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["stored"] },
+                    "app_id": { "type": "string" },
+                    "item": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "App not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
     },
     "/v1/credentials/gateway/{app_id}": {
-      "get": { "summary": "Start OAuth redirect flow", "security": [{ "bearerAuth": [] }], "responses": { "302": { "description": "Redirect" } } }
+      "parameters": [
+        { "name": "app_id", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "summary": "Start OAuth redirect flow",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "302": { "description": "Redirect to OAuth provider" }
+        }
+      }
     },
     "/v1/credentials/device/{app_id}": {
-      "post": { "summary": "Start OAuth device flow", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Started" } } }
+      "parameters": [
+        { "name": "app_id", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "summary": "Start OAuth device flow",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Device flow started" }
+        }
+      }
     },
     "/v1/credentials/callback": {
-      "get": { "summary": "OAuth callback", "responses": { "200": { "description": "Authorized" }, "400": { "description": "Invalid callback" } } }
+      "get": {
+        "summary": "OAuth callback",
+        "responses": {
+          "200": { "description": "Authorized" },
+          "400": { "description": "Invalid callback" }
+        }
+      }
     },
 
     "/v1/secrets/challenge": {
-      "post": { "summary": "Issue PoP challenge", "responses": { "200": { "description": "Challenge" }, "404": { "description": "Instance not found" } } }
+      "post": {
+        "summary": "Issue PoP challenge",
+        "description": "In strict RA-TLS mode, request must include client_attestation and response includes server_attestation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fid": { "type": "string" },
+                  "client_attestation": {
+                    "type": "object",
+                    "properties": {
+                      "app_cert": { "type": "string" },
+                      "tcb_info": { "type": "string" },
+                      "app_id": { "type": "string" },
+                      "instance_id": { "type": "string" },
+                      "device_id": { "type": "string" }
+                    }
+                  }
+                },
+                "required": ["fid"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Challenge (+server_attestation in strict mode)" },
+          "401": { "description": "Attestation verification failed / required" },
+          "404": { "description": "Instance not found" }
+        }
+      }
     },
     "/v1/secrets/fetch": {
-      "post": { "summary": "Verify challenge and fetch encrypted secrets", "responses": { "200": { "description": "Encrypted secrets" }, "401": { "description": "Challenge verification failed" } } }
+      "post": {
+        "summary": "Verify challenge and fetch encrypted secrets",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fid": { "type": "string" },
+                  "secret_references": { "type": "array", "items": { "type": "string" } },
+                  "challenge_id": { "type": "string" },
+                  "challenge_response": { "type": "string", "description": "base64" }
+                },
+                "required": ["fid", "secret_references", "challenge_id", "challenge_response"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Encrypted secrets" },
+          "401": { "description": "Challenge/RA verification failed" }
+        }
+      }
     }
   }
 }

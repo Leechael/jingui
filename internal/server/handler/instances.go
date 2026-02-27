@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/aspect-build/jingui/internal/server/db"
@@ -11,10 +12,11 @@ import (
 )
 
 type registerInstanceRequest struct {
-	PublicKey   string `json:"public_key" binding:"required"`
-	BoundAppID  string `json:"bound_app_id" binding:"required"`
-	BoundUserID string `json:"bound_user_id" binding:"required"`
-	Label       string `json:"label"`
+	PublicKey             string `json:"public_key" binding:"required"`
+	BoundVault            string `json:"bound_vault" binding:"required"`
+	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
+	BoundItem             string `json:"bound_item" binding:"required"`
+	Label                 string `json:"label"`
 }
 
 // HandleRegisterInstance handles POST /v1/instances.
@@ -37,11 +39,12 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 		fid := hex.EncodeToString(h[:])
 
 		inst := &db.TEEInstance{
-			FID:         fid,
-			PublicKey:   pubKeyBytes,
-			BoundAppID:  req.BoundAppID,
-			BoundUserID: req.BoundUserID,
-			Label:       req.Label,
+			FID:                   fid,
+			PublicKey:             pubKeyBytes,
+			BoundVault:            req.BoundVault,
+			BoundAttestationAppID: req.BoundAttestationAppID,
+			BoundItem:             req.BoundItem,
+			Label:                 req.Label,
 		}
 
 		if err := store.RegisterInstance(inst); err != nil {
@@ -52,7 +55,7 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 				c.JSON(http.StatusConflict, gin.H{"error": "another instance with this public key already exists"})
 			case db.ErrInstanceAppUserNotFound:
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf("app %q with authorized user %q not found; register the app and complete OAuth authorization first", req.BoundAppID, req.BoundUserID),
+					"error": fmt.Sprintf("vault %q with authorized item %q not found; register the vault and complete OAuth authorization first", req.BoundVault, req.BoundItem),
 				})
 			default:
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -61,5 +64,34 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusCreated, gin.H{"fid": fid, "status": "registered"})
+	}
+}
+
+type updateInstanceRequest struct {
+	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
+	Label                 string `json:"label"`
+}
+
+// HandleUpdateInstance handles PUT /v1/instances/:fid.
+func HandleUpdateInstance(store *db.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		fid := c.Param("fid")
+		var req updateInstanceRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		updated, err := store.UpdateInstance(fid, req.BoundAttestationAppID, req.Label)
+		if err != nil {
+			log.Printf("UpdateInstance(%q) error: %v", fid, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if !updated {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "updated", "fid": fid})
 	}
 }

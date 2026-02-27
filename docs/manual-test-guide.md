@@ -4,11 +4,10 @@ This guide splits testing into two parts: **Server side (operator machine)** and
 Values such as keys, FID, and public key are generated dynamically during execution. Record them and reuse them in later steps.
 
 > If you want a quick local end-to-end regression first, run: `scripts/manual-test.sh`.
-> The script already covers app / instance / user-secret admin CRUD checks and cascade-delete scenarios.
+> The script already covers app / instance / secret admin CRUD checks and cascade-delete scenarios.
 >
-> ✅ Current implementation uses `jingui://<app_id>/<user_id>/<field>` semantics.
+> Secret reference format: `jingui://<vault>/<item>/<field>` (3-segment) or `jingui://<vault>/<item>/<section>/<field>` (4-segment).
 > Examples in this guide follow the current server/client behavior.
-> A future migration to `jingui://<service>/<slug>/<field>` is tracked separately and not enabled yet.
 
 ---
 
@@ -21,6 +20,10 @@ On your development machine:
 make clean build
 bin/jingui --version        # → jingui ...
 bin/jingui-server -v        # → jingui-server ...
+
+# Build binaries (requires dcap-qvl static library for RA-TLS)
+go build -o bin/jingui ./cmd/jingui
+go build -o bin/jingui-server ./cmd/jingui-server
 
 # Cross-compile linux/amd64 client for TDX
 make build-client-linux-amd64
@@ -61,6 +64,7 @@ export JINGUI_ADMIN_TOKEN="<value from previous step>"
 export JINGUI_DB_PATH="./jingui-test.db"
 export JINGUI_LISTEN_ADDR=":8080"
 export JINGUI_BASE_URL="http://<SERVER_IP>:8080"   # Must be reachable from TDX
+export JINGUI_LOG_LEVEL="debug"                    # Optional: print RA measurements/status
 
 bin/jingui-server
 # Output: jingui-server listening on :8080
@@ -68,6 +72,7 @@ bin/jingui-server
 
 > If server runs on Linux, use `bin/linux-amd64/jingui-server`.
 > Note: if `JINGUI_BASE_URL` is not HTTPS, server prints a warning. This is acceptable in test environments.
+> For RA-TLS diagnostics, either set `JINGUI_LOG_LEVEL=debug` or start with `bin/jingui-server --verbose`.
 
 ### A3. Register App (Upload Google OAuth `credentials.json`)
 
@@ -89,19 +94,19 @@ curl -s -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d "$(jq -n \
-    --arg app_id "gmail-app" \
+    --arg vault "gmail-app" \
     --arg name "Gmail App" \
     --arg service_type "gmail" \
     --arg scopes "https://mail.google.com/" \
     --argjson creds "$(cat credentials.json)" \
-    '{app_id:$app_id, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
+    '{vault:$vault, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
   )"
 ```
 
 **Expected response:**
 
 ```json
-{"app_id":"gmail-app","status":"created"}
+{"vault":"gmail-app","status":"created"}
 ```
 
 **Check ✓**: HTTP 201, status = `created`
@@ -113,12 +118,12 @@ curl -s -X PUT "$SERVER/v1/apps/gmail-app" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d "$(jq -n \
-    --arg app_id "gmail-app" \
+    --arg vault "gmail-app" \
     --arg name "Gmail App" \
     --arg service_type "gmail" \
     --arg scopes "https://mail.google.com/" \
     --argjson creds "$(cat credentials.json)" \
-    '{app_id:$app_id, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
+    '{vault:$vault, name:$name, service_type:$service_type, required_scopes:$scopes, credentials_json:$creds}'
   )"
 ```
 
@@ -150,12 +155,12 @@ Flow:
 **Expected response:**
 
 ```json
-{"status":"authorized","app_id":"gmail-app","email":"user@example.com"}
+{"status":"authorized","vault":"gmail-app","email":"user@example.com"}
 ```
 
 **Check ✓**: `status = authorized`, `email` matches the authorized Google account
 
-> **Record the email**: `bound_user_id` in TEE instance registration must match this value.
+> **Record the email**: `bound_item` in TEE instance registration must match this value.
 
 ### A5. (Pause) Wait for Client-Side Key Generation
 
@@ -231,13 +236,18 @@ Send the **Public Key** to operator and continue Part A at A6.
 
 ### A6. Register TEE Instance
 
-Use the TDX-generated public key and the OAuth email from A4:
+Use the TDX-generated public key and the OAuth email from A4.
+
+`bound_attestation_app_id` is a hex string identifying the RA-TLS application identity
+(e.g. SHA-1 of the app certificate). In production this comes from the TEE attestation
+report; for manual testing use any 40-char hex value:
 
 ```bash
 SERVER="http://<SERVER_IP>:8080"
 ADMIN_TOKEN="<Admin Token generated in A1>"
 PUBLIC_KEY="<Public Key from B3>"
 EMAIL="<Authorized email from A4>"
+ATTESTATION_APP_ID="e2215b69c6f4e3aa0584a60fda044bfe1a133ff9"
 
 curl -s -X POST "$SERVER/v1/instances" \
   -H 'Content-Type: application/json' \
@@ -245,9 +255,10 @@ curl -s -X POST "$SERVER/v1/instances" \
   -d "$(jq -n \
     --arg pk "$PUBLIC_KEY" \
     --arg app "gmail-app" \
+    --arg attestation "$ATTESTATION_APP_ID" \
     --arg user "$EMAIL" \
     --arg label "tdx-test-1" \
-    '{public_key:$pk, bound_app_id:$app, bound_user_id:$user, label:$label}'
+    '{public_key:$pk, bound_vault:$app, bound_attestation_app_id:$attestation, bound_item:$user, label:$label}'
   )"
 ```
 
@@ -260,6 +271,34 @@ curl -s -X POST "$SERVER/v1/instances" \
 **Check ✓**:
 - HTTP 201
 - Returned `fid` matches the FID shown in B3 status output
+
+### A6b. Update TEE Instance (Optional)
+
+Update `bound_attestation_app_id` or `label` on an existing instance without deleting and re-registering:
+
+```bash
+FID="<FID from B3>"
+NEW_ATTESTATION_APP_ID="<new 40-char hex value>"
+
+curl -s -X PUT "$SERVER/v1/instances/$FID" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d "$(jq -n \
+    --arg attestation "$NEW_ATTESTATION_APP_ID" \
+    --arg label "updated-label" \
+    '{bound_attestation_app_id:$attestation, label:$label}'
+  )"
+```
+
+**Expected response:**
+
+```json
+{"fid":"2f4e9d...","status":"updated"}
+```
+
+**Check ✓**:
+- HTTP 200
+- Verify via `GET /v1/instances/$FID` that `bound_attestation_app_id` and `label` reflect the new values
 
 ### A7. Challenge Endpoint Smoke Test (Optional)
 
@@ -300,13 +339,14 @@ EOF
 ```bash
 cd /opt/jingui
 ./jingui read \
+  --verbose \
   --server "http://<SERVER_IP>:8080" \
   --appkeys .appkeys.json \
   --insecure \
   "jingui://gmail-app/user@example.com/client_id"
 ```
 
-**Expected**: by default prints only the real `client_id` value to stdout (e.g., `xxx.apps.googleusercontent.com`).
+**Expected**: prints the real `client_id` value to stdout (e.g., `xxx.apps.googleusercontent.com`). With `--verbose`, stderr also includes RA-TLS verification logs (TCB status, MR/RTMR measurements, app_id binding).
 
 To display debug metadata (FID/Public Key):
 
@@ -442,14 +482,14 @@ exit code: 42
 # No token → 401
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
-  -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
+  -d '{"vault":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
 # Expected: 401
 
 # Wrong token → 401
 curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/apps" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer wrong-token' \
-  -d '{"app_id":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
+  -d '{"vault":"x","name":"x","service_type":"x","credentials_json":{"installed":{"client_id":"a","client_secret":"b"}}}'
 # Expected: 401
 
 # secrets/challenge is a TEE caller endpoint (no admin token)
@@ -473,7 +513,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
 
 **Expected**: request fails with HTTP 403 (`app_id mismatch ...`).
 
-### C2. Wrong `user_id` (via client read)
+### C2. Wrong item (via client read)
 
 ```bash
 ./jingui read \
@@ -483,7 +523,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
   "jingui://gmail-app/wrong@example.com/client_id"
 ```
 
-**Expected**: request fails with HTTP 403 (`user_id mismatch ...`).
+**Expected**: request fails with HTTP 403 (`item mismatch ...`).
 
 ### C3. Non-existent FID
 
@@ -504,23 +544,23 @@ UNREGISTERED_APPKEYS="/path/to/another-instance/.appkeys.json"
 
 ## Admin CRUD Supplemental Checks (New)
 
-### D1. Query Endpoints (apps / instances / user-secrets)
+### D1. Query Endpoints (apps / instances / secrets)
 
 ```bash
 curl -s "$SERVER/v1/apps" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 curl -s "$SERVER/v1/instances" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
-curl -s "$SERVER/v1/user-secrets" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+curl -s "$SERVER/v1/secrets" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 ```
 
 **Check ✓**:
 - all return 200
 - `apps` does not leak `credentials_encrypted`
-- `user-secrets` list does not leak `secret_encrypted`
+- `secrets` list does not leak `secret_encrypted`
 
 ### D2. Non-cascade Delete Should Be Blocked
 
 ```bash
-# If user_secrets/instances still exist under app, delete should fail
+# If vault_items/instances still exist under app, delete should fail
 curl -s -o /dev/null -w "%{http_code}" -X DELETE \
   "$SERVER/v1/apps/gmail-app" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
@@ -537,7 +577,7 @@ curl -s -X DELETE \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**Expected**: 200; corresponding records should be removed from apps / user-secrets / instances.
+**Expected**: 200; corresponding records should be removed from apps / secrets / instances.
 
 ---
 
@@ -549,6 +589,7 @@ curl -s -X DELETE \
 | A3 | Register App (with admin token) | 201 created | ☐ |
 | A4 | OAuth authorization | authorized + email | ☐ |
 | A6 | Register TEE Instance | 201 registered, FID matches | ☐ |
+| A6b | Update TEE Instance | 200 updated, GET reflects new values | ☐ |
 | A7 | challenge endpoint smoke test | returns challenge_id + challenge | ☐ |
 | B2 | Binary version | linux/amd64 | ☐ |
 | B3 | `jingui status` | FID/public_key printed from provisioned `.appkeys.json` | ☐ |
@@ -561,5 +602,5 @@ curl -s -X DELETE \
 | B12 | gogcli integration | works + no leaks | ☐ |
 | C0 | Admin token auth | no/wrong token → 401, TEE secret endpoints are not admin-token protected | ☐ |
 | C1 | Wrong app_id | 403 | ☐ |
-| C2 | Wrong user_id | 403 | ☐ |
+| C2 | Wrong item | 403 | ☐ |
 | C3 | Non-existent FID | 404 | ☐ |

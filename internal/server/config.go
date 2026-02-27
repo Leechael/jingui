@@ -10,11 +10,12 @@ import (
 
 // Config holds server configuration loaded from environment variables.
 type Config struct {
-	MasterKey  [32]byte
-	AdminToken string
-	DBPath     string
-	ListenAddr string
-	BaseURL    string
+	MasterKey   [32]byte
+	AdminToken  string
+	DBPath      string
+	ListenAddr  string
+	BaseURL     string
+	RATLSStrict bool
 }
 
 // LoadConfig loads server configuration from environment variables.
@@ -65,11 +66,24 @@ func LoadConfig() (*Config, error) {
 		log.Printf("WARNING: JINGUI_BASE_URL is not HTTPS (%s). Use HTTPS in production.", baseURL)
 	}
 
+	ratlsStrict := true
+	if v := strings.TrimSpace(strings.ToLower(os.Getenv("JINGUI_RATLS_STRICT"))); v != "" {
+		switch v {
+		case "1", "true", "yes", "on":
+			ratlsStrict = true
+		case "0", "false", "no", "off":
+			ratlsStrict = false
+		default:
+			return nil, fmt.Errorf("JINGUI_RATLS_STRICT must be one of true/false/1/0/yes/no/on/off")
+		}
+	}
+
 	return &Config{
-		MasterKey:  masterKey,
-		AdminToken: adminToken,
-		DBPath:     dbPath,
-		ListenAddr: listenAddr,
-		BaseURL:    baseURL,
+		MasterKey:   masterKey,
+		AdminToken:  adminToken,
+		DBPath:      dbPath,
+		ListenAddr:  listenAddr,
+		BaseURL:     baseURL,
+		RATLSStrict: ratlsStrict,
 	}, nil
 }

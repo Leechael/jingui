@@ -52,15 +52,17 @@ docker run -d \
 | `JINGUI_DB_PATH` | No | `jingui.db` | SQLite database path |
 | `JINGUI_LISTEN_ADDR` | No | `:8080` | Listen address |
 | `JINGUI_BASE_URL` | No | `http://localhost:8080` | Public URL for OAuth callbacks |
+| `JINGUI_RATLS_STRICT` | No | `true` | Require client/server attestation exchange in challenge/fetch flow |
+| `JINGUI_LOG_LEVEL` | No | `info` | Log level (`debug`,`info`,`warn`,`error`) for RA-TLS handshake diagnostics |
 
 ### Client
 
 Create a `.env` file with secret references:
 
 ```env
-GMAIL_CLIENT_ID=jingui://my-gmail/user@example.com/client_id
-GMAIL_CLIENT_SECRET=jingui://my-gmail/user@example.com/client_secret
-GMAIL_REFRESH_TOKEN=jingui://my-gmail/user@example.com/refresh_token
+GMAIL_CLIENT_ID=jingui://my-gmail/alice@example.com/client_id
+GMAIL_CLIENT_SECRET=jingui://my-gmail/alice@example.com/client_secret
+GMAIL_REFRESH_TOKEN=jingui://my-gmail/alice@example.com/refresh_token
 DATABASE_URL=postgres://localhost/mydb
 ```
 
@@ -79,7 +81,7 @@ jingui status --server https://jingui.example.com
 Read one secret (metadata is hidden by default):
 
 ```bash
-jingui read --server https://jingui.example.com 'jingui://my-gmail/user@example.com/client_id'
+jingui read --server https://jingui.example.com 'jingui://my-gmail/alice@example.com/client_id'
 # use --show-meta to print FID/Public Key to stderr for debugging
 ```
 
@@ -92,22 +94,34 @@ Lines with `jingui://` URIs are fetched and decrypted; plain values pass through
 | `--env-file` | `.env` | Environment file with secret refs |
 | `--insecure` | `false` | Allow plaintext HTTP |
 | `--no-lockdown` | `false` | Disable seccomp hardening |
+| `--verbose` | `false` | Enable verbose debug logs (same as `--log-level debug`) |
+| `--log-level` | `JINGUI_LOG_LEVEL` / `info` | Log level (`debug`,`info`,`warn`,`error`) |
 
 `jingui read` also supports `--show-meta` to print FID/Public Key to stderr when debugging.
+
+RA-TLS strict client knobs:
+- `JINGUI_RATLS_STRICT` (default `true`)
+- `JINGUI_RATLS_EXPECT_SERVER_APP_ID` (optional pin; when set, server attestation app_id must match)
+- `JINGUI_LOG_LEVEL=debug` (or `--verbose`) to print RA verification measurements (MR/RTMR/TCB status)
 
 ## Secret Reference Format
 
 ```
-jingui://<app_id>/<user_id>/<field_name>
+jingui://<vault>/<item>/<field_name>
+jingui://<vault>/<item>/<section>/<field_name>
 ```
+
+- `<vault>` — app/service namespace (e.g. `my-gmail`)
+- `<item>` — item within the vault (e.g. `alice@example.com`)
+- `<section>` — optional subsection (e.g. `oauth`)
+- `<field_name>` — field within the secret object (e.g. `client_id`)
 
 Examples:
 
-- `jingui://my-gmail/user@example.com/client_id`
-- `jingui://my-gmail/user@example.com/client_secret`
-- `jingui://my-gmail/user@example.com/refresh_token`
-
-> Note: migration to `jingui://<service>/<slug>/<field>` is planned, but current stable implementation and tests use `<app_id>/<user_id>/<field>`.
+- `jingui://my-gmail/alice@example.com/client_id`
+- `jingui://my-gmail/alice@example.com/client_secret`
+- `jingui://my-gmail/alice@example.com/refresh_token`
+- `jingui://my-gmail/alice@example.com/oauth/access_token` (4-segment)
 
 ## Security Model
 
@@ -119,8 +133,10 @@ Examples:
 
 ## Building
 
+RA-TLS attestation verification requires the dcap-qvl static library (built from Rust). CI builds it automatically; for local development see `scripts/build-dcap-qvl.sh` or the Dockerfile.
+
 ```bash
-make build          # current platform
+make build          # current platform (requires dcap-qvl)
 make build-all      # cross-compile all 8 binaries (2 × 4 platforms)
 make ci             # lint + test + bdd
 ```
@@ -150,27 +166,30 @@ docker build --target client -t jingui .
 
 ### Instance management
 
+FID (Fingerprint ID) = `hex(SHA1(public_key))` — a 40-char hex identifier derived from the instance's X25519 public key.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/v1/instances` | Register a TEE instance (public key + binding) |
 | GET | `/v1/instances` | List registered TEE instances |
 | GET | `/v1/instances/:fid` | Get instance details |
+| PUT | `/v1/instances/:fid` | Update `bound_attestation_app_id` and `label` |
 | DELETE | `/v1/instances/:fid` | Delete an instance |
 
-### User-secret management
+### Secret management
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/user-secrets` | List user-secret metadata (supports `?app_id=` filter) |
-| GET | `/v1/user-secrets/:app_id/:user_id` | Get one user-secret metadata record |
-| DELETE | `/v1/user-secrets/:app_id/:user_id` | Delete user secret (`?cascade=true` deletes dependent instances) |
+| GET | `/v1/secrets` | List secret metadata (supports `?vault=` filter) |
+| GET | `/v1/secrets/:vault/:item` | Get one secret metadata record |
+| DELETE | `/v1/secrets/:vault/:item` | Delete secret (`?cascade=true` deletes dependent instances) |
 
-### Debug policy APIs (runtime user-level read control)
+### Debug policy APIs (runtime item-level read control)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/debug-policy/:app_id/:user_id` | Get whether `jingui read` is allowed for this user |
-| PUT | `/v1/debug-policy/:app_id/:user_id` | Update `allow_read_debug` at runtime |
+| GET | `/v1/debug-policy/:vault/:item` | Get whether `jingui read` is allowed for this item |
+| PUT | `/v1/debug-policy/:vault/:item` | Update `allow_read_debug` at runtime |
 
 ### Credential APIs
 
@@ -192,16 +211,6 @@ docker build --target client -t jingui .
 
 - Full end-to-end script: `scripts/manual-test.sh`
 - Step-by-step guide: `docs/manual-test-guide.md`
-
-## Planned refactor (in progress)
-
-- Correct data model semantics:
-  - `app_id` is workload identity (CVM/agent app), not provider/service name.
-  - Secret references use `jingui://<service>/<slug>/<field>` and do not carry `app_id`.
-- Execution plan:
-  1. Refactor DB schema and CRUD first (single-step migration; no backward-compat layer).
-  2. Keep server-client flow working with challenge-response during refactor.
-  3. Introduce RA-TLS-based identity binding in next phase without changing ref syntax.
 
 ## License
 
