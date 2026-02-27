@@ -29,10 +29,10 @@ func newStrictChallengeRouter(t *testing.T) *gin.Engine {
 	if err := store.CreateApp(app); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := store.UpsertUserSecret(&db.UserSecret{Vault: "a1", UserID: "u1", SecretEncrypted: []byte{1}}); err != nil {
+	if err := store.UpsertVaultItem(&db.VaultItem{Vault: "a1", Item: "u1", SecretEncrypted: []byte{1}}); err != nil {
 		t.Fatalf("upsert user secret: %v", err)
 	}
-	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), BoundVault: "a1", BoundAttestationAppID: "a1", BoundUserID: "u1"}); err != nil {
+	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), BoundVault: "a1", BoundAttestationAppID: "a1", BoundItem: "u1"}); err != nil {
 		t.Fatalf("register instance: %v", err)
 	}
 

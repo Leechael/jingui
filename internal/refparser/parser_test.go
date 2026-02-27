@@ -7,30 +7,29 @@ func TestParse_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if ref.Service != "gmail" {
-		t.Errorf("Service = %q, want %q", ref.Service, "gmail")
+	if ref.Vault != "gmail" {
+		t.Errorf("Vault = %q, want %q", ref.Vault, "gmail")
 	}
-	if ref.Slug != "user@example.com" {
-		t.Errorf("Slug = %q, want %q", ref.Slug, "user@example.com")
+	if ref.Item != "user@example.com" {
+		t.Errorf("Item = %q, want %q", ref.Item, "user@example.com")
 	}
 	if ref.FieldName != "token" {
 		t.Errorf("FieldName = %q, want %q", ref.FieldName, "token")
 	}
+	if ref.Section != "" {
+		t.Errorf("Section = %q, want empty", ref.Section)
+	}
 	if ref.Raw != "jingui://gmail/user@example.com/token" {
 		t.Errorf("Raw = %q", ref.Raw)
-	}
-	// Transitional aliases
-	if ref.AppID != ref.Service || ref.SecretName != ref.Slug {
-		t.Errorf("transitional aliases not populated")
 	}
 }
 
 func TestParse_AllFields(t *testing.T) {
 	tests := []struct {
-		ref     string
-		service string
-		slug    string
-		field   string
+		ref   string
+		vault string
+		item  string
+		field string
 	}{
 		{"jingui://gmail/work/token", "gmail", "work", "token"},
 		{"jingui://github/foo@bar.com/pat", "github", "foo@bar.com", "pat"},
@@ -41,10 +40,29 @@ func TestParse_AllFields(t *testing.T) {
 			t.Errorf("Parse(%q): %v", tt.ref, err)
 			continue
 		}
-		if r.Service != tt.service || r.Slug != tt.slug || r.FieldName != tt.field {
+		if r.Vault != tt.vault || r.Item != tt.item || r.FieldName != tt.field {
 			t.Errorf("Parse(%q) = {%q, %q, %q}, want {%q, %q, %q}", tt.ref,
-				r.Service, r.Slug, r.FieldName, tt.service, tt.slug, tt.field)
+				r.Vault, r.Item, r.FieldName, tt.vault, tt.item, tt.field)
 		}
+	}
+}
+
+func TestParse_FourSegment(t *testing.T) {
+	ref, err := Parse("jingui://gmail/user@ex.com/oauth/token")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if ref.Vault != "gmail" {
+		t.Errorf("Vault = %q, want %q", ref.Vault, "gmail")
+	}
+	if ref.Item != "user@ex.com" {
+		t.Errorf("Item = %q, want %q", ref.Item, "user@ex.com")
+	}
+	if ref.Section != "oauth" {
+		t.Errorf("Section = %q, want %q", ref.Section, "oauth")
+	}
+	if ref.FieldName != "token" {
+		t.Errorf("FieldName = %q, want %q", ref.FieldName, "token")
 	}
 }
 
@@ -58,6 +76,7 @@ func TestParse_Invalid(t *testing.T) {
 		"jingui:///name/field",
 		"jingui://app//field",
 		"jingui://app/name/",
+		"jingui://a/b/c/d/e", // 5 segments — invalid
 	}
 	for _, ref := range invalids {
 		_, err := Parse(ref)

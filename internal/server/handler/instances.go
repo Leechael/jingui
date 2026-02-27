@@ -14,7 +14,7 @@ type registerInstanceRequest struct {
 	PublicKey             string `json:"public_key" binding:"required"`
 	BoundVault            string `json:"bound_vault" binding:"required"`
 	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
-	BoundUserID           string `json:"bound_user_id" binding:"required"`
+	BoundItem             string `json:"bound_item" binding:"required"`
 	Label                 string `json:"label"`
 }
 
@@ -42,7 +42,7 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 			PublicKey:             pubKeyBytes,
 			BoundVault:            req.BoundVault,
 			BoundAttestationAppID: req.BoundAttestationAppID,
-			BoundUserID:           req.BoundUserID,
+			BoundItem:             req.BoundItem,
 			Label:                 req.Label,
 		}
 
@@ -54,7 +54,7 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 				c.JSON(http.StatusConflict, gin.H{"error": "another instance with this public key already exists"})
 			case db.ErrInstanceAppUserNotFound:
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf("vault %q with authorized user %q not found; register the vault and complete OAuth authorization first", req.BoundVault, req.BoundUserID),
+					"error": fmt.Sprintf("vault %q with authorized item %q not found; register the vault and complete OAuth authorization first", req.BoundVault, req.BoundItem),
 				})
 			default:
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

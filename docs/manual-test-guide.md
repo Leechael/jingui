@@ -4,11 +4,10 @@ This guide splits testing into two parts: **Server side (operator machine)** and
 Values such as keys, FID, and public key are generated dynamically during execution. Record them and reuse them in later steps.
 
 > If you want a quick local end-to-end regression first, run: `scripts/manual-test.sh`.
-> The script already covers app / instance / user-secret admin CRUD checks and cascade-delete scenarios.
+> The script already covers app / instance / secret admin CRUD checks and cascade-delete scenarios.
 >
-> ✅ Current implementation uses `jingui://<app_id>/<user_id>/<field>` semantics.
+> Secret reference format: `jingui://<vault>/<item>/<field>` (3-segment) or `jingui://<vault>/<item>/<section>/<field>` (4-segment).
 > Examples in this guide follow the current server/client behavior.
-> A future migration to `jingui://<service>/<slug>/<field>` is tracked separately and not enabled yet.
 
 ---
 
@@ -161,7 +160,7 @@ Flow:
 
 **Check ✓**: `status = authorized`, `email` matches the authorized Google account
 
-> **Record the email**: `bound_user_id` in TEE instance registration must match this value.
+> **Record the email**: `bound_item` in TEE instance registration must match this value.
 
 ### A5. (Pause) Wait for Client-Side Key Generation
 
@@ -253,7 +252,7 @@ curl -s -X POST "$SERVER/v1/instances" \
     --arg app "gmail-app" \
     --arg user "$EMAIL" \
     --arg label "tdx-test-1" \
-    '{public_key:$pk, bound_app_id:$app, bound_user_id:$user, label:$label}'
+    '{public_key:$pk, bound_vault:$app, bound_item:$user, label:$label}'
   )"
 ```
 
@@ -480,7 +479,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
 
 **Expected**: request fails with HTTP 403 (`app_id mismatch ...`).
 
-### C2. Wrong `user_id` (via client read)
+### C2. Wrong item (via client read)
 
 ```bash
 ./jingui read \
@@ -490,7 +489,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$SERVER/v1/secrets/challenge" \
   "jingui://gmail-app/wrong@example.com/client_id"
 ```
 
-**Expected**: request fails with HTTP 403 (`user_id mismatch ...`).
+**Expected**: request fails with HTTP 403 (`item mismatch ...`).
 
 ### C3. Non-existent FID
 
@@ -511,23 +510,23 @@ UNREGISTERED_APPKEYS="/path/to/another-instance/.appkeys.json"
 
 ## Admin CRUD Supplemental Checks (New)
 
-### D1. Query Endpoints (apps / instances / user-secrets)
+### D1. Query Endpoints (apps / instances / secrets)
 
 ```bash
 curl -s "$SERVER/v1/apps" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 curl -s "$SERVER/v1/instances" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
-curl -s "$SERVER/v1/user-secrets" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+curl -s "$SERVER/v1/secrets" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 ```
 
 **Check ✓**:
 - all return 200
 - `apps` does not leak `credentials_encrypted`
-- `user-secrets` list does not leak `secret_encrypted`
+- `secrets` list does not leak `secret_encrypted`
 
 ### D2. Non-cascade Delete Should Be Blocked
 
 ```bash
-# If user_secrets/instances still exist under app, delete should fail
+# If vault_items/instances still exist under app, delete should fail
 curl -s -o /dev/null -w "%{http_code}" -X DELETE \
   "$SERVER/v1/apps/gmail-app" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
@@ -544,7 +543,7 @@ curl -s -X DELETE \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**Expected**: 200; corresponding records should be removed from apps / user-secrets / instances.
+**Expected**: 200; corresponding records should be removed from apps / secrets / instances.
 
 ---
 
@@ -568,5 +567,5 @@ curl -s -X DELETE \
 | B12 | gogcli integration | works + no leaks | ☐ |
 | C0 | Admin token auth | no/wrong token → 401, TEE secret endpoints are not admin-token protected | ☐ |
 | C1 | Wrong app_id | 403 | ☐ |
-| C2 | Wrong user_id | 403 | ☐ |
+| C2 | Wrong item | 403 | ☐ |
 | C3 | Non-existent FID | 404 | ☐ |

@@ -1,3 +1,9 @@
+## Unreleased
+
+- refactor: rename `user_id` → `item`, `user_secrets` → `vault_items`, `/v1/user-secrets` → `/v1/secrets`
+- refactor: add optional 4-segment secret reference support (`jingui://vault/item/section/field`)
+- refactor: DB migration for existing `user_secrets` → `vault_items`, `bound_user_id` → `bound_item`
+
 ## v0.1.2-alpha.6 (2026-02-26)
 
 - logging: print version string on server startup

@@ -17,7 +17,7 @@ type instanceView struct {
 	PublicKey             string  `json:"public_key"`
 	BoundVault            string  `json:"bound_vault"`
 	BoundAttestationAppID string  `json:"bound_attestation_app_id"`
-	BoundUserID           string  `json:"bound_user_id"`
+	BoundItem             string  `json:"bound_item"`
 	Label                 string  `json:"label"`
 	CreatedAt             string  `json:"created_at"`
 	LastUsedAt            *string `json:"last_used_at"`
@@ -29,7 +29,7 @@ func newInstanceView(inst *db.TEEInstance) instanceView {
 		PublicKey:             hex.EncodeToString(inst.PublicKey),
 		BoundVault:            inst.BoundVault,
 		BoundAttestationAppID: inst.BoundAttestationAppID,
-		BoundUserID:           inst.BoundUserID,
+		BoundItem:             inst.BoundItem,
 		Label:                 inst.Label,
 		CreatedAt:             inst.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -166,48 +166,48 @@ func HandleDeleteInstance(store *db.Store) gin.HandlerFunc {
 	}
 }
 
-// --- User Secrets ---
+// --- Secrets (Vault Items) ---
 
-// HandleListUserSecrets handles GET /v1/user-secrets.
-func HandleListUserSecrets(store *db.Store) gin.HandlerFunc {
+// HandleListSecrets handles GET /v1/secrets.
+func HandleListSecrets(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vault := c.Query("app_id")
+		vault := c.Query("vault")
 
-		var secrets []db.UserSecret
+		var items []db.VaultItem
 		var err error
 		if vault != "" {
-			secrets, err = store.ListUserSecretsByApp(vault)
+			items, err = store.ListVaultItemsByVault(vault)
 		} else {
-			secrets, err = store.ListUserSecrets()
+			items, err = store.ListVaultItems()
 		}
 
 		if err != nil {
-			log.Printf("ListUserSecrets error: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list user secrets"})
+			log.Printf("ListSecrets error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list secrets"})
 			return
 		}
-		c.JSON(http.StatusOK, secrets)
+		c.JSON(http.StatusOK, items)
 	}
 }
 
-// HandleGetUserSecret handles GET /v1/user-secrets/:app_id/:user_id.
-func HandleGetUserSecret(store *db.Store) gin.HandlerFunc {
+// HandleGetSecret handles GET /v1/secrets/:vault/:item.
+func HandleGetSecret(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vault := c.Param("app_id")
-		userID := c.Param("user_id")
-		secret, err := store.GetUserSecret(vault, userID)
+		vault := c.Param("vault")
+		item := c.Param("item")
+		secret, err := store.GetVaultItem(vault, item)
 		if err != nil {
-			log.Printf("GetUserSecret(%q, %q) error: %v", vault, userID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve user secret"})
+			log.Printf("GetSecret(%q, %q) error: %v", vault, item, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve secret"})
 			return
 		}
 		if secret == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user secret not found"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "secret not found"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"vault":      secret.Vault,
-			"user_id":    secret.UserID,
+			"item":       secret.Item,
 			"has_secret": len(secret.SecretEncrypted) > 0,
 			"created_at": secret.CreatedAt,
 			"updated_at": secret.UpdatedAt,
@@ -215,51 +215,51 @@ func HandleGetUserSecret(store *db.Store) gin.HandlerFunc {
 	}
 }
 
-// HandleDeleteUserSecret handles DELETE /v1/user-secrets/:app_id/:user_id.
-func HandleDeleteUserSecret(store *db.Store) gin.HandlerFunc {
+// HandleDeleteSecret handles DELETE /v1/secrets/:vault/:item.
+func HandleDeleteSecret(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vault := c.Param("app_id")
-		userID := c.Param("user_id")
+		vault := c.Param("vault")
+		item := c.Param("item")
 		cascade := c.Query("cascade") == "true"
 
 		var deleted bool
 		var err error
 		if cascade {
-			deleted, err = store.DeleteUserSecretCascade(vault, userID)
+			deleted, err = store.DeleteVaultItemCascade(vault, item)
 		} else {
-			deleted, err = store.DeleteUserSecret(vault, userID)
+			deleted, err = store.DeleteVaultItem(vault, item)
 		}
 
 		if err != nil {
-			if errors.Is(err, db.ErrSecretHasDependents) {
+			if errors.Is(err, db.ErrItemHasDependents) {
 				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			} else {
-				log.Printf("DeleteUserSecret(%q, %q) error: %v", vault, userID, err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user secret"})
+				log.Printf("DeleteSecret(%q, %q) error: %v", vault, item, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete secret"})
 			}
 			return
 		}
 		if !deleted {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user secret not found"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "secret not found"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "deleted", "vault": vault, "user_id": userID})
+		c.JSON(http.StatusOK, gin.H{"status": "deleted", "vault": vault, "item": item})
 	}
 }
 
-// HandleGetDebugPolicy handles GET /v1/debug-policy/:app_id/:user_id.
+// HandleGetDebugPolicy handles GET /v1/debug-policy/:vault/:item.
 func HandleGetDebugPolicy(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vault := c.Param("app_id")
-		userID := c.Param("user_id")
-		p, err := store.GetDebugPolicy(vault, userID)
+		vault := c.Param("vault")
+		item := c.Param("item")
+		p, err := store.GetDebugPolicy(vault, item)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get debug policy"})
 			return
 		}
 		if p == nil {
 			// default allow=true if no policy row exists
-			c.JSON(http.StatusOK, gin.H{"vault": vault, "user_id": userID, "allow_read_debug": true, "source": "default"})
+			c.JSON(http.StatusOK, gin.H{"vault": vault, "item": item, "allow_read_debug": true, "source": "default"})
 			return
 		}
 		c.JSON(http.StatusOK, p)
@@ -270,20 +270,20 @@ type putDebugPolicyRequest struct {
 	AllowReadDebug bool `json:"allow_read_debug"`
 }
 
-// HandlePutDebugPolicy handles PUT /v1/debug-policy/:app_id/:user_id.
+// HandlePutDebugPolicy handles PUT /v1/debug-policy/:vault/:item.
 func HandlePutDebugPolicy(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vault := c.Param("app_id")
-		userID := c.Param("user_id")
+		vault := c.Param("vault")
+		item := c.Param("item")
 		var req putDebugPolicyRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := store.UpsertDebugPolicy(vault, userID, req.AllowReadDebug); err != nil {
+		if err := store.UpsertDebugPolicy(vault, item, req.AllowReadDebug); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update debug policy"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "updated", "vault": vault, "user_id": userID, "allow_read_debug": req.AllowReadDebug})
+		c.JSON(http.StatusOK, gin.H{"status": "updated", "vault": vault, "item": item, "allow_read_debug": req.AllowReadDebug})
 	}
 }

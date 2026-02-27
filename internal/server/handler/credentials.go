@@ -10,7 +10,7 @@ import (
 )
 
 type putCredentialsRequest struct {
-	UserID  string            `json:"user_id" binding:"required"`
+	Item    string            `json:"item" binding:"required"`
 	Secrets map[string]string `json:"secrets" binding:"required"`
 }
 
@@ -48,21 +48,21 @@ func HandlePutCredentials(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		secret := &db.UserSecret{
+		vi := &db.VaultItem{
 			Vault:           appID,
-			UserID:          req.UserID,
+			Item:            req.Item,
 			SecretEncrypted: encrypted,
 		}
 
-		if err := store.UpsertUserSecret(secret); err != nil {
+		if err := store.UpsertVaultItem(vi); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store secret"})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "stored",
-			"app_id":  appID,
-			"user_id": req.UserID,
+			"status": "stored",
+			"app_id": appID,
+			"item":   req.Item,
 		})
 	}
 }

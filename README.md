@@ -60,9 +60,9 @@ docker run -d \
 Create a `.env` file with secret references:
 
 ```env
-GMAIL_CLIENT_ID=jingui://my-gmail/user@example.com/client_id
-GMAIL_CLIENT_SECRET=jingui://my-gmail/user@example.com/client_secret
-GMAIL_REFRESH_TOKEN=jingui://my-gmail/user@example.com/refresh_token
+GMAIL_CLIENT_ID=jingui://my-gmail/alice@example.com/client_id
+GMAIL_CLIENT_SECRET=jingui://my-gmail/alice@example.com/client_secret
+GMAIL_REFRESH_TOKEN=jingui://my-gmail/alice@example.com/refresh_token
 DATABASE_URL=postgres://localhost/mydb
 ```
 
@@ -81,7 +81,7 @@ jingui status --server https://jingui.example.com
 Read one secret (metadata is hidden by default):
 
 ```bash
-jingui read --server https://jingui.example.com 'jingui://my-gmail/user@example.com/client_id'
+jingui read --server https://jingui.example.com 'jingui://my-gmail/alice@example.com/client_id'
 # use --show-meta to print FID/Public Key to stderr for debugging
 ```
 
@@ -107,16 +107,21 @@ RA-TLS strict client knobs:
 ## Secret Reference Format
 
 ```
-jingui://<app_id>/<user_id>/<field_name>
+jingui://<vault>/<item>/<field_name>
+jingui://<vault>/<item>/<section>/<field_name>
 ```
+
+- `<vault>` — app/service namespace (e.g. `my-gmail`)
+- `<item>` — item within the vault (e.g. `alice@example.com`)
+- `<section>` — optional subsection (e.g. `oauth`)
+- `<field_name>` — field within the secret object (e.g. `client_id`)
 
 Examples:
 
-- `jingui://my-gmail/user@example.com/client_id`
-- `jingui://my-gmail/user@example.com/client_secret`
-- `jingui://my-gmail/user@example.com/refresh_token`
-
-> Note: migration to `jingui://<service>/<slug>/<field>` is planned, but current stable implementation and tests use `<app_id>/<user_id>/<field>`.
+- `jingui://my-gmail/alice@example.com/client_id`
+- `jingui://my-gmail/alice@example.com/client_secret`
+- `jingui://my-gmail/alice@example.com/refresh_token`
+- `jingui://my-gmail/alice@example.com/oauth/access_token` (4-segment)
 
 ## Security Model
 
@@ -175,20 +180,20 @@ docker build --target client -t jingui .
 | GET | `/v1/instances/:fid` | Get instance details |
 | DELETE | `/v1/instances/:fid` | Delete an instance |
 
-### User-secret management
+### Secret management
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/user-secrets` | List user-secret metadata (supports `?app_id=` filter) |
-| GET | `/v1/user-secrets/:app_id/:user_id` | Get one user-secret metadata record |
-| DELETE | `/v1/user-secrets/:app_id/:user_id` | Delete user secret (`?cascade=true` deletes dependent instances) |
+| GET | `/v1/secrets` | List secret metadata (supports `?vault=` filter) |
+| GET | `/v1/secrets/:vault/:item` | Get one secret metadata record |
+| DELETE | `/v1/secrets/:vault/:item` | Delete secret (`?cascade=true` deletes dependent instances) |
 
-### Debug policy APIs (runtime user-level read control)
+### Debug policy APIs (runtime item-level read control)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/debug-policy/:app_id/:user_id` | Get whether `jingui read` is allowed for this user |
-| PUT | `/v1/debug-policy/:app_id/:user_id` | Update `allow_read_debug` at runtime |
+| GET | `/v1/debug-policy/:vault/:item` | Get whether `jingui read` is allowed for this item |
+| PUT | `/v1/debug-policy/:vault/:item` | Update `allow_read_debug` at runtime |
 
 ### Credential APIs
 
@@ -210,16 +215,6 @@ docker build --target client -t jingui .
 
 - Full end-to-end script: `scripts/manual-test.sh`
 - Step-by-step guide: `docs/manual-test-guide.md`
-
-## Planned refactor (in progress)
-
-- Correct data model semantics:
-  - `app_id` is workload identity (CVM/agent app), not provider/service name.
-  - Secret references use `jingui://<service>/<slug>/<field>` and do not carry `app_id`.
-- Execution plan:
-  1. Refactor DB schema and CRUD first (single-step migration; no backward-compat layer).
-  2. Keep server-client flow working with challenge-response during refactor.
-  3. Introduce RA-TLS-based identity binding in next phase without changing ref syntax.
 
 ## License
 

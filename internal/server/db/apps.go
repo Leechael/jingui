@@ -84,7 +84,7 @@ func (s *Store) ListApps() ([]App, error) {
 	return apps, rows.Err()
 }
 
-// ErrAppHasDependents is returned when deleting an app that still has user_secrets.
+// ErrAppHasDependents is returned when deleting an app that still has vault_items.
 var ErrAppHasDependents = errors.New("app has dependent records; delete them first or use ?cascade=true")
 
 // DeleteApp deletes an app by ID. Returns true if a row was deleted.
@@ -102,7 +102,7 @@ func (s *Store) DeleteApp(appID string) (bool, error) {
 	return n > 0, nil
 }
 
-// DeleteAppCascade deletes an app and all its dependent user_secrets and tee_instances in a transaction.
+// DeleteAppCascade deletes an app and all its dependent vault_items and tee_instances in a transaction.
 // Returns true if the app existed and was deleted.
 func (s *Store) DeleteAppCascade(appID string) (bool, error) {
 	tx, err := s.db.Begin()
@@ -111,14 +111,14 @@ func (s *Store) DeleteAppCascade(appID string) (bool, error) {
 	}
 	defer tx.Rollback()
 
-	// Delete tee_instances that reference user_secrets of this app
+	// Delete tee_instances that reference vault_items of this app
 	if _, err := tx.Exec(`DELETE FROM tee_instances WHERE bound_app_id = ?`, appID); err != nil {
 		return false, fmt.Errorf("delete instances for app: %w", err)
 	}
 
-	// Delete user_secrets for this app
-	if _, err := tx.Exec(`DELETE FROM user_secrets WHERE app_id = ?`, appID); err != nil {
-		return false, fmt.Errorf("delete secrets for app: %w", err)
+	// Delete vault_items for this app
+	if _, err := tx.Exec(`DELETE FROM vault_items WHERE app_id = ?`, appID); err != nil {
+		return false, fmt.Errorf("delete items for app: %w", err)
 	}
 
 	// Delete the app itself

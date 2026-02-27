@@ -14,16 +14,15 @@ To preserve technical accuracy, this document directly includes key technical sp
 
 ---
 
-## Current Implementation Status (as of 2026-02-26)
+## Current Implementation Status (as of 2026-02-27)
 
 To avoid ambiguity between target design and shipped behavior, this snapshot is authoritative for the current codebase:
 
-- Secret reference format in runtime paths: `jingui://<app_id>/<user_id>/<field>`
-- `user_secrets` keyspace: `(app_id, user_id)`
+- Secret reference format: `jingui://<vault>/<item>/<field>` (3-segment) or `jingui://<vault>/<item>/<section>/<field>` (4-segment)
+- `vault_items` keyspace: `(app_id, item)`
 - `jingui inject` is planned, not implemented in current CLI
 - Challenge-response (`/v1/secrets/challenge` + `/v1/secrets/fetch`) is implemented and required for fetch
-
-The service/slug reference model and corresponding schema changes remain planned roadmap work.
+- RA-TLS strict mode with bidirectional attestation is implemented
 
 ## 1. Product Overview
 
@@ -125,14 +124,13 @@ Although Jingui targets non-human AI agents, its UX model is inspired by **1Pass
 
 Use URI-style references:
 
-`jingui://<app_id>/<user_id>/<field_name>`
+`jingui://<vault>/<item>/<field_name>` or `jingui://<vault>/<item>/<section>/<field_name>`
 
 - `jingui://`: protocol prefix.
-- `<app_id>`: app namespace (currently used as first path segment).
-- `<user_id>`: user namespace (typically authorized email).
+- `<vault>`: vault namespace (e.g. app/service name).
+- `<item>`: item within the vault (e.g. authorized email).
+- `<section>`: optional subsection (e.g. `oauth`).
 - `<field_name>`: field within secret object (`refresh_token`, `client_id`, etc).
-
-> Current implementation and tests use `<app_id>/<user_id>/<field>`. The service/slug format is a planned migration item.
 
 Examples:
 
@@ -171,14 +169,14 @@ Jingui Server is the central authority for credential authorization and distribu
 ### 4.1 Core Responsibilities (Revised)
 
 - **Workload app management**: manage CVM/Agent workload identity. Each workload has unique `app_id` (dstack semantics), which is the authorization boundary key.
-- **Service secret management**: manage per-user secrets for external services (e.g. Gmail), organized by `(app_id, user_id, service, slug)`.
+- **Vault item management**: manage per-item secrets for external services (e.g. Gmail), organized by `(app_id, item)`.
 - **TEE instance registration**: maintain instance identity and key material. Current phase uses FID+public key binding; next phase introduces RA-TLS attestation.
 - **On-demand encrypted dispatch**: resolve secret references under instance-bound identity; decrypt at rest data and re-encrypt to requester public key via ECIES.
 - **Encryption at rest**: all persisted sensitive data uses server master key encryption.
 
 ### 4.2 Data Model (Database Schema)
 
-> This section is target-state design. Current implementation still uses `apps(app_id, service_type, required_scopes, credentials_encrypted)` and `user_secrets(app_id, user_id, secret_encrypted)`.
+> Current implementation uses `apps(app_id, service_type, required_scopes, credentials_encrypted)` and `vault_items(app_id, item, secret_encrypted)`.
 
 #### 4.2.1 `apps` (workload applications)
 
@@ -191,18 +189,16 @@ CREATE TABLE apps (
 );
 ```
 
-#### 4.2.2 `user_secrets` (service credentials)
+#### 4.2.2 `vault_items` (service credentials)
 
 ```sql
-CREATE TABLE user_secrets (
+CREATE TABLE vault_items (
     app_id TEXT NOT NULL REFERENCES apps(app_id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL,
-    service TEXT NOT NULL,                  -- e.g. gmail/github
-    slug TEXT NOT NULL,                     -- e.g. foo@example.com / work
+    item TEXT NOT NULL,                     -- e.g. foo@example.com / work
     secret_encrypted BYTEA NOT NULL,        -- encrypted JSON object
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (app_id, user_id, service, slug)
+    PRIMARY KEY (app_id, item)
 );
 ```
 
@@ -213,7 +209,7 @@ CREATE TABLE tee_instances (
     fid TEXT PRIMARY KEY,
     public_key BYTEA NOT NULL UNIQUE,
     bound_app_id TEXT NOT NULL REFERENCES apps(app_id),
-    bound_user_id TEXT NOT NULL,
+    bound_item TEXT NOT NULL,
     label TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMPTZ,
@@ -240,9 +236,9 @@ The server should expose both gRPC and REST APIs.
 | :--- | :--- | :--- | :--- | :--- |
 | `AppService` | `RegisterApp` | `POST /v1/apps` | Human admin | Register workload app (`app_id`). |
 | `AppService` | `UpdateApp` | `PUT /v1/apps/{app_id}` | Human admin | Update existing app metadata/credentials. |
-| `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | Human admin | Write service secret for app/user (`service+slug`). |
+| `CredentialService` | `PutCredential` | `PUT /v1/credentials/{app_id}` | Human admin | Write vault item secret (`vault`/`item`). |
 | `SecretService` | `FetchSecrets` | `POST /v1/secrets/fetch` | **TEE client** | **Core API**. TEE instance batch-fetches encrypted credentials based on bound identity. |
-| `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / ops script | Register TEE instance and bind app/user identity. |
+| `InstanceService` | `RegisterInstance` | `POST /v1/instances` | KMS / ops script | Register TEE instance and bind vault/item identity. |
 
 #### Core API flow: `FetchSecrets`
 
@@ -254,10 +250,10 @@ The server should expose both gRPC and REST APIs.
    }
    ```
 2. **Instance verification**: lookup `fid` in `tee_instances`; return 404 if not found.
-3. **Reference parsing**: parse each secret reference into `service`, `slug`, `field_name`.
-4. **Authorization**: resolve bound identity `(bound_app_id, bound_user_id)` by `fid`; authorize references under that namespace.
+3. **Reference parsing**: parse each secret reference into `vault`, `item`, `field_name`.
+4. **Authorization**: resolve bound identity `(bound_app_id, bound_item)` by `fid`; authorize references under that namespace.
 5. **Batch fetch and encrypt**:
-   - read `secret_encrypted` from `user_secrets` using `(app_id, user_id, service, slug)`;
+   - read `secret_encrypted` from `vault_items` using `(app_id, item)`;
    - decrypt using server master key and extract `field_name`;
    - ECIES-encrypt with instance public key.
 6. **Response**:
@@ -635,27 +631,24 @@ This section captures agreed baseline corrections.
 - Current implementation incorrectly treats `app_id` as external service app identifier (e.g. gmail-app).
 - Target semantics: `app_id` should represent CVM/Agent workload identity from TEE attestation chain.
 
-**Planned design changes (not yet shipped)**
-- Secret reference migration target: `jingui://<service>/<slug_or_email>/<field_name>`.
-- Remove `app_id` from secret references.
-- Keep `app_id` as server-side authorization boundary (determined by instance binding and later attestation).
-
-**Execution strategy (single-step migration)**
-1. Refactor DB/schema/CRUD first and keep server-client primary flow operational.
-2. One-shot migration (no old-field compatibility, no v2 API).
-3. Introduce RA-TLS in next phase, while reserving abstraction/fields now to avoid future breaking change.
+**Completed design changes**
+- Secret reference format: `jingui://<vault>/<item>/<field>` (with optional 4-segment `<section>` support).
+- DB table renamed `user_secrets` → `vault_items`, column `user_id` → `item`.
+- API route `/v1/user-secrets` → `/v1/secrets`, params `:app_id/:user_id` → `:vault/:item`.
+- `app_id` remains as server-side authorization boundary (determined by instance binding and attestation).
 
 ---
 
 ## 8. Roadmap
 
-### Phase 1 (current): Data Model Refactor + CRUD First
+### Phase 1 (complete): Data Model Refactor + CRUD
 
-- **Goal**: correct `app_id` semantics while keeping server-client integration testable.
+- **Goal**: correct data model semantics and rename `user_id` → `item`.
 - **Scope**:
   - one-shot schema migration (no compatibility layer, no v2 API),
-  - secret reference becomes `jingui://<service>/<slug>/<field>`,
-  - align admin CRUD and fetch/read/run with new semantics.
+  - secret reference: `jingui://<vault>/<item>/<field>` (with optional 4-segment `<section>` support),
+  - renamed DB table `user_secrets` → `vault_items`, route `/v1/user-secrets` → `/v1/secrets`,
+  - aligned admin CRUD, fetch/read/run, and all tests.
 
 ### Phase 2: RA-TLS Identity Binding
 

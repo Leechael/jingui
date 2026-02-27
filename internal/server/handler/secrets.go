@@ -272,13 +272,13 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 
 		command := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Jingui-Command")))
 		if command == "read" {
-			policy, err := store.GetDebugPolicy(inst.BoundVault, inst.BoundUserID)
+			policy, err := store.GetDebugPolicy(inst.BoundVault, inst.BoundItem)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load debug policy"})
 				return
 			}
 			if policy != nil && !policy.AllowReadDebug {
-				c.JSON(http.StatusForbidden, gin.H{"error": "debug read is disabled for this user"})
+				c.JSON(http.StatusForbidden, gin.H{"error": "debug read is disabled for this item"})
 				return
 			}
 		}
@@ -292,15 +292,15 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 				return
 			}
 
-			// Validate: ref's vault (service segment) must match instance's bound_vault.
-			if ref.Service != inst.BoundVault {
+			// Validate: ref's vault must match instance's bound_vault.
+			if ref.Vault != inst.BoundVault {
 				c.JSON(http.StatusForbidden, gin.H{"error": "vault mismatch for reference: " + refStr})
 				return
 			}
 
-			// Validate: ref's user segment must match instance's bound_user_id.
-			if ref.Slug != inst.BoundUserID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "user_id mismatch for reference: " + refStr})
+			// Validate: ref's item must match instance's bound_item.
+			if ref.Item != inst.BoundItem {
+				c.JSON(http.StatusForbidden, gin.H{"error": "item mismatch for reference: " + refStr})
 				return
 			}
 
@@ -308,9 +308,9 @@ func HandleFetchSecrets(store *db.Store, masterKey [32]byte, strict bool) gin.Ha
 
 			switch ref.FieldName {
 			case "client_id", "client_secret":
-				plainValue, err = extractAppField(store, masterKey, ref.Service, ref.FieldName)
+				plainValue, err = extractAppField(store, masterKey, ref.Vault, ref.FieldName)
 			case "refresh_token":
-				plainValue, err = extractUserSecret(store, masterKey, ref.Service, ref.Slug, ref.FieldName)
+				plainValue, err = extractVaultItemField(store, masterKey, ref.Vault, ref.Item, ref.FieldName)
 			default:
 				c.JSON(http.StatusBadRequest, gin.H{"error": "unknown field: " + ref.FieldName})
 				return
@@ -364,16 +364,16 @@ func extractAppField(store *db.Store, masterKey [32]byte, vault, fieldName strin
 	}
 }
 
-func extractUserSecret(store *db.Store, masterKey [32]byte, vault, userID, fieldName string) ([]byte, error) {
-	us, err := store.GetUserSecret(vault, userID)
+func extractVaultItemField(store *db.Store, masterKey [32]byte, vault, item, fieldName string) ([]byte, error) {
+	vi, err := store.GetVaultItem(vault, item)
 	if err != nil {
 		return nil, err
 	}
-	if us == nil {
-		return nil, fmt.Errorf("secret not found for %s/%s", vault, userID)
+	if vi == nil {
+		return nil, fmt.Errorf("secret not found for %s/%s", vault, item)
 	}
 
-	secretJSON, err := crypto.DecryptAtRest(masterKey, us.SecretEncrypted)
+	secretJSON, err := crypto.DecryptAtRest(masterKey, vi.SecretEncrypted)
 	if err != nil {
 		return nil, err
 	}

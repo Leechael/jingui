@@ -132,7 +132,7 @@ echo "--- 3.5 Store user credentials (PUT /v1/credentials) ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
   -X PUT "$BASE/v1/credentials/my-gmail" -H "$AUTH" -H "Content-Type: application/json" \
   -d '{
-    "user_id": "alice@example.com",
+    "item": "alice@example.com",
     "secrets": {
       "refresh_token": "ya29.super-secret-refresh-token-for-alice"
     }
@@ -140,28 +140,28 @@ HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
 check "PUT /v1/credentials/my-gmail → 200" "200" "$HTTP_CODE"
 
 echo ""
-echo "--- 3.6 List user secrets ---"
+echo "--- 3.6 List secrets ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
-  "$BASE/v1/user-secrets" -H "$AUTH")
-check "GET /v1/user-secrets → 200" "200" "$HTTP_CODE"
+  "$BASE/v1/secrets" -H "$AUTH")
+check "GET /v1/secrets → 200" "200" "$HTTP_CODE"
 COUNT=$(json_len "$WORKDIR/resp.json")
 check "  secret count = 1" "1" "$COUNT"
 HAS_ENCRYPTED=$(json_any_has "$WORKDIR/resp.json" "secret_encrypted")
 check "  secret_encrypted not leaked" "False" "$HAS_ENCRYPTED"
 
 echo ""
-echo "--- 3.7 List user secrets filtered by app ---"
+echo "--- 3.7 List secrets filtered by vault ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
-  "$BASE/v1/user-secrets?app_id=my-gmail" -H "$AUTH")
-check "GET /v1/user-secrets?app_id=my-gmail → 200" "200" "$HTTP_CODE"
+  "$BASE/v1/secrets?vault=my-gmail" -H "$AUTH")
+check "GET /v1/secrets?vault=my-gmail → 200" "200" "$HTTP_CODE"
 COUNT=$(json_len "$WORKDIR/resp.json")
 check "  filtered count = 1" "1" "$COUNT"
 
 echo ""
-echo "--- 3.8 Get user secret detail ---"
+echo "--- 3.8 Get secret detail ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
-  "$BASE/v1/user-secrets/my-gmail/alice@example.com" -H "$AUTH")
-check "GET /v1/user-secrets/.../alice → 200" "200" "$HTTP_CODE"
+  "$BASE/v1/secrets/my-gmail/alice@example.com" -H "$AUTH")
+check "GET /v1/secrets/.../alice → 200" "200" "$HTTP_CODE"
 VAL=$(json_val "$WORKDIR/resp.json" "['has_secret']")
 check "  has_secret = True" "True" "$VAL"
 
@@ -234,8 +234,8 @@ HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
   -X POST "$BASE/v1/instances" -H "$AUTH" -H "Content-Type: application/json" \
   -d "{
     \"public_key\": \"$PUB_KEY\",
-    \"bound_app_id\": \"my-gmail\",
-    \"bound_user_id\": \"alice@example.com\",
+    \"bound_vault\": \"my-gmail\",
+    \"bound_item\": \"alice@example.com\",
     \"label\": \"manual-test\"
   }")
 check "POST /v1/instances → 201" "201" "$HTTP_CODE"
@@ -351,10 +351,10 @@ HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
 check "DELETE /v1/instances/$FID → 200" "200" "$HTTP_CODE"
 
 echo ""
-echo "--- 6.3 DELETE user secret (no deps after instance removed) ---"
+echo "--- 6.3 DELETE secret (no deps after instance removed) ---"
 HTTP_CODE=$(curl -s -o "$WORKDIR/resp.json" -w "%{http_code}" \
-  -X DELETE "$BASE/v1/user-secrets/my-gmail/alice@example.com" -H "$AUTH")
-check "DELETE user secret → 200" "200" "$HTTP_CODE"
+  -X DELETE "$BASE/v1/secrets/my-gmail/alice@example.com" -H "$AUTH")
+check "DELETE secret → 200" "200" "$HTTP_CODE"
 
 echo ""
 echo "--- 6.4 DELETE app (no deps remaining) ---"
@@ -368,7 +368,7 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/v1/apps/my-gmail" -H "
 check "app gone → 404" "404" "$HTTP_CODE"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/v1/instances/$FID" -H "$AUTH")
 check "instance gone → 404" "404" "$HTTP_CODE"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/v1/user-secrets/my-gmail/alice@example.com" -H "$AUTH")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/v1/secrets/my-gmail/alice@example.com" -H "$AUTH")
 check "secret gone → 404" "404" "$HTTP_CODE"
 
 ########################################################################
@@ -383,10 +383,10 @@ curl -s -o /dev/null -X POST "$BASE/v1/apps" -H "$AUTH" -H "Content-Type: applic
   -d '{"app_id":"cascade-app","name":"Cascade Test","service_type":"gmail",
        "credentials_json":{"installed":{"client_id":"cid","client_secret":"cs","redirect_uris":["http://localhost"]}}}'
 curl -s -o /dev/null -X PUT "$BASE/v1/credentials/cascade-app" -H "$AUTH" -H "Content-Type: application/json" \
-  -d '{"user_id":"bob@example.com","secrets":{"refresh_token":"tok"}}'
+  -d '{"item":"bob@example.com","secrets":{"refresh_token":"tok"}}'
 # Reuse same client key
 curl -s -o /dev/null -X POST "$BASE/v1/instances" -H "$AUTH" -H "Content-Type: application/json" \
-  -d "{\"public_key\":\"$PUB_KEY\",\"bound_app_id\":\"cascade-app\",\"bound_user_id\":\"bob@example.com\"}"
+  -d "{\"public_key\":\"$PUB_KEY\",\"bound_vault\":\"cascade-app\",\"bound_item\":\"bob@example.com\"}"
 echo "  Created cascade-app → bob@example.com → instance"
 
 echo ""
@@ -399,7 +399,7 @@ echo ""
 echo "--- 7.3 Verify cascade cleaned everything ---"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/v1/apps/cascade-app" -H "$AUTH")
 check "app gone → 404" "404" "$HTTP_CODE"
-curl -s -o "$WORKDIR/resp.json" "$BASE/v1/user-secrets?app_id=cascade-app" -H "$AUTH"
+curl -s -o "$WORKDIR/resp.json" "$BASE/v1/secrets?vault=cascade-app" -H "$AUTH"
 SECRETS_COUNT=$(json_len "$WORKDIR/resp.json")
 check "no secrets remain" "0" "$SECRETS_COUNT"
 curl -s -o "$WORKDIR/resp.json" "$BASE/v1/instances" -H "$AUTH"
@@ -421,9 +421,9 @@ for EP in \
   "GET /v1/instances" \
   "GET /v1/instances/x" \
   "DELETE /v1/instances/x" \
-  "GET /v1/user-secrets" \
-  "GET /v1/user-secrets/x/y" \
-  "DELETE /v1/user-secrets/x/y"; do
+  "GET /v1/secrets" \
+  "GET /v1/secrets/x/y" \
+  "DELETE /v1/secrets/x/y"; do
   METHOD="${EP%% *}"
   PATH_="${EP#* }"
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X "$METHOD" "$BASE$PATH_")
