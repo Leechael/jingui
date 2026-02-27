@@ -636,7 +636,10 @@
         },
         "responses": {
           "200": { "description": "Encrypted secrets" },
-          "401": { "description": "Challenge/RA verification failed" }
+          "400": { "description": "Invalid reference format" },
+          "401": { "description": "Challenge/RA verification failed" },
+          "403": { "description": "Vault access denied (vault mismatch)" },
+          "404": { "description": "Item, field, vault, or secret not found" }
         }
       }
     }

@@ -43,4 +43,4 @@ Feature: Secret fetching via challenge-response
     And I solve the challenge and fetch secrets:
       | ref                                                |
       | jingui://other-app/user@example.com/client_id      |
-    Then the response status should be 403
+    Then the response status should be 404
