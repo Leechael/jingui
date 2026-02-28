@@ -1,3 +1,7 @@
+## v0.1.3-beta.5 (2026-02-28)
+
+- fix: guard against undefined dstack_app_id in instances list
+
 ## v0.1.3-beta.4 (2026-02-28)
 
 - fix: assert empty list body in BDD scenario for nonexistent vault
