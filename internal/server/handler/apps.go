@@ -12,9 +12,9 @@ import (
 type createAppRequest struct {
 	Vault           string          `json:"vault" binding:"required"`
 	Name            string          `json:"name" binding:"required"`
-	ServiceType     string          `json:"service_type" binding:"required"`
+	ServiceType     string          `json:"service_type"`
 	RequiredScopes  string          `json:"required_scopes"`
-	CredentialsJSON json.RawMessage `json:"credentials_json" binding:"required"`
+	CredentialsJSON json.RawMessage `json:"credentials_json"`
 }
 
 // HandleCreateApp handles POST /v1/apps.
@@ -26,18 +26,26 @@ func HandleCreateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		// Validate credentials_json is valid JSON with expected fields
-		var creds struct {
-			Installed *json.RawMessage `json:"installed"`
-			Web       *json.RawMessage `json:"web"`
+		// Default empty credentials to {}
+		if len(req.CredentialsJSON) == 0 {
+			req.CredentialsJSON = json.RawMessage(`{}`)
 		}
-		if err := json.Unmarshal(req.CredentialsJSON, &creds); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
-			return
-		}
-		if creds.Installed == nil && creds.Web == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
-			return
+
+		// Validate credentials_json only when non-trivial (not just {})
+		trimmed := string(req.CredentialsJSON)
+		if trimmed != "{}" {
+			var creds struct {
+				Installed *json.RawMessage `json:"installed"`
+				Web       *json.RawMessage `json:"web"`
+			}
+			if err := json.Unmarshal(req.CredentialsJSON, &creds); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
+				return
+			}
+			if creds.Installed == nil && creds.Web == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
+				return
+			}
 		}
 
 		// Encrypt credentials at rest
@@ -87,17 +95,26 @@ func HandleUpdateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		var creds struct {
-			Installed *json.RawMessage `json:"installed"`
-			Web       *json.RawMessage `json:"web"`
+		// Default empty credentials to {}
+		if len(req.CredentialsJSON) == 0 {
+			req.CredentialsJSON = json.RawMessage(`{}`)
 		}
-		if err := json.Unmarshal(req.CredentialsJSON, &creds); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
-			return
-		}
-		if creds.Installed == nil && creds.Web == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
-			return
+
+		// Validate credentials_json only when non-trivial (not just {})
+		trimmed := string(req.CredentialsJSON)
+		if trimmed != "{}" {
+			var creds struct {
+				Installed *json.RawMessage `json:"installed"`
+				Web       *json.RawMessage `json:"web"`
+			}
+			if err := json.Unmarshal(req.CredentialsJSON, &creds); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
+				return
+			}
+			if creds.Installed == nil && creds.Web == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
+				return
+			}
 		}
 
 		encrypted, err := crypto.EncryptAtRest(masterKey, req.CredentialsJSON)

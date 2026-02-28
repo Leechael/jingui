@@ -9,11 +9,14 @@ export const appKeys = {
 export const instanceKeys = {
   all: ["instances"] as const,
   detail: (fid: string) => ["instances", fid] as const,
+  byVault: (vault: string) => ["instances", "vault", vault] as const,
 };
 
 export const secretKeys = {
   all: ["secrets"] as const,
   detail: (vault: string, item: string) => ["secrets", vault, item] as const,
+  data: (vault: string, item: string) =>
+    ["secrets", vault, item, "data"] as const,
 };
 
 export const debugPolicyKeys = {
@@ -60,6 +63,20 @@ export function secretDetailQuery(vault: string, item: string) {
   return queryOptions({
     queryKey: secretKeys.detail(vault, item),
     queryFn: () => getClient().getSecret(vault, item),
+  });
+}
+
+export function secretDataQuery(vault: string, item: string) {
+  return queryOptions({
+    queryKey: secretKeys.data(vault, item),
+    queryFn: () => getClient().getSecretData(vault, item),
+  });
+}
+
+export function instancesByVaultQuery(vault: string) {
+  return queryOptions({
+    queryKey: instanceKeys.byVault(vault),
+    queryFn: () => getClient().listInstances(vault),
   });
 }
 

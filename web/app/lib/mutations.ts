@@ -4,6 +4,7 @@ import { appKeys, instanceKeys, secretKeys, debugPolicyKeys } from "./queries";
 import { addToast } from "./toast";
 import type {
   AppRequest,
+  CreateVaultRequest,
   InstanceRequest,
   InstanceUpdateRequest,
   CredentialsRequest,
@@ -17,7 +18,19 @@ export function useCreateApp() {
     mutationFn: (data: AppRequest) => getClient().createApp(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: appKeys.all });
-      addToast("App created successfully");
+      addToast("Vault created successfully");
+    },
+    onError: (e) => addToast(e.message, "error"),
+  });
+}
+
+export function useCreateVault() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateVaultRequest) => getClient().createVault(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: appKeys.all });
+      addToast("Vault created successfully");
     },
     onError: (e) => addToast(e.message, "error"),
   });
@@ -30,7 +43,7 @@ export function useUpdateApp(appId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: appKeys.all });
       qc.invalidateQueries({ queryKey: appKeys.detail(appId) });
-      addToast("App updated successfully");
+      addToast("Vault updated successfully");
     },
     onError: (e) => addToast(e.message, "error"),
   });
@@ -43,7 +56,7 @@ export function useDeleteApp() {
       getClient().deleteApp(appId, cascade),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: appKeys.all });
-      addToast("App deleted successfully");
+      addToast("Vault deleted successfully");
     },
     onError: (e) => addToast(e.message, "error"),
   });

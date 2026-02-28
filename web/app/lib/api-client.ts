@@ -3,11 +3,13 @@ import type {
   AppRequest,
   AppListItem,
   AppDetail,
+  CreateVaultRequest,
   InstanceRequest,
   InstanceUpdateRequest,
   InstanceView,
   SecretListItem,
   SecretDetail,
+  SecretData,
   CredentialsRequest,
   DebugPolicyResponse,
   DebugPolicyRequest,
@@ -91,9 +93,17 @@ class JinguiClient {
     );
   }
 
+  createVault(data: CreateVaultRequest) {
+    return this.request<{ vault: string; status: string }>("/v1/apps", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Instances
-  listInstances() {
-    return this.request<InstanceView[]>("/v1/instances");
+  listInstances(vault?: string) {
+    const qs = vault ? `?vault=${encodeURIComponent(vault)}` : "";
+    return this.request<InstanceView[]>(`/v1/instances${qs}`);
   }
 
   getInstance(fid: string) {
@@ -132,6 +142,12 @@ class JinguiClient {
   getSecret(vault: string, item: string) {
     return this.request<SecretDetail>(
       `/v1/secrets/${encodeURIComponent(vault)}/${encodeURIComponent(item)}`,
+    );
+  }
+
+  getSecretData(vault: string, item: string) {
+    return this.request<SecretData>(
+      `/v1/secrets/${encodeURIComponent(vault)}/${encodeURIComponent(item)}/data`,
     );
   }
 

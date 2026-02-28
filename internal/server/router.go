@@ -40,7 +40,8 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 		v1.DELETE("/instances/:fid", admin, handler.HandleDeleteInstance(store))
 
 		v1.GET("/secrets", admin, handler.HandleListSecrets(store))
-		v1.GET("/secrets/:vault/:item", admin, handler.HandleGetSecret(store))
+		v1.GET("/secrets/:vault/:item", admin, handler.HandleGetSecret(store, cfg.MasterKey))
+		v1.GET("/secrets/:vault/:item/data", admin, handler.HandleGetSecretData(store, cfg.MasterKey))
 		v1.DELETE("/secrets/:vault/:item", admin, handler.HandleDeleteSecret(store))
 
 		v1.GET("/debug-policy/:vault/:item", admin, handler.HandleGetDebugPolicy(store))

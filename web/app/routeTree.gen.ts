@@ -11,13 +11,9 @@
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as SettingsRouteImport } from "./routes/settings"
 import { Route as IndexRouteImport } from "./routes/index"
-import { Route as SecretsIndexRouteImport } from "./routes/secrets/index"
 import { Route as InstancesIndexRouteImport } from "./routes/instances/index"
-import { Route as AppsIndexRouteImport } from "./routes/apps/index"
 import { Route as InstancesNewRouteImport } from "./routes/instances/new"
 import { Route as InstancesFidRouteImport } from "./routes/instances/$fid"
-import { Route as AppsNewRouteImport } from "./routes/apps/new"
-import { Route as AppsAppIdRouteImport } from "./routes/apps/$appId"
 
 const SettingsRoute = SettingsRouteImport.update({
   id: "/settings",
@@ -29,19 +25,9 @@ const IndexRoute = IndexRouteImport.update({
   path: "/",
   getParentRoute: () => rootRouteImport,
 } as any)
-const SecretsIndexRoute = SecretsIndexRouteImport.update({
-  id: "/secrets/",
-  path: "/secrets/",
-  getParentRoute: () => rootRouteImport,
-} as any)
 const InstancesIndexRoute = InstancesIndexRouteImport.update({
   id: "/instances/",
   path: "/instances/",
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppsIndexRoute = AppsIndexRouteImport.update({
-  id: "/apps/",
-  path: "/apps/",
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstancesNewRoute = InstancesNewRouteImport.update({
@@ -54,97 +40,54 @@ const InstancesFidRoute = InstancesFidRouteImport.update({
   path: "/instances/$fid",
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppsNewRoute = AppsNewRouteImport.update({
-  id: "/apps/new",
-  path: "/apps/new",
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppsAppIdRoute = AppsAppIdRouteImport.update({
-  id: "/apps/$appId",
-  path: "/apps/$appId",
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
   "/settings": typeof SettingsRoute
-  "/apps/$appId": typeof AppsAppIdRoute
-  "/apps/new": typeof AppsNewRoute
   "/instances/$fid": typeof InstancesFidRoute
   "/instances/new": typeof InstancesNewRoute
-  "/apps/": typeof AppsIndexRoute
   "/instances/": typeof InstancesIndexRoute
-  "/secrets/": typeof SecretsIndexRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/settings": typeof SettingsRoute
-  "/apps/$appId": typeof AppsAppIdRoute
-  "/apps/new": typeof AppsNewRoute
   "/instances/$fid": typeof InstancesFidRoute
   "/instances/new": typeof InstancesNewRoute
-  "/apps": typeof AppsIndexRoute
   "/instances": typeof InstancesIndexRoute
-  "/secrets": typeof SecretsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
   "/settings": typeof SettingsRoute
-  "/apps/$appId": typeof AppsAppIdRoute
-  "/apps/new": typeof AppsNewRoute
   "/instances/$fid": typeof InstancesFidRoute
   "/instances/new": typeof InstancesNewRoute
-  "/apps/": typeof AppsIndexRoute
   "/instances/": typeof InstancesIndexRoute
-  "/secrets/": typeof SecretsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | "/"
     | "/settings"
-    | "/apps/$appId"
-    | "/apps/new"
     | "/instances/$fid"
     | "/instances/new"
-    | "/apps/"
     | "/instances/"
-    | "/secrets/"
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | "/"
-    | "/settings"
-    | "/apps/$appId"
-    | "/apps/new"
-    | "/instances/$fid"
-    | "/instances/new"
-    | "/apps"
-    | "/instances"
-    | "/secrets"
+  to: "/" | "/settings" | "/instances/$fid" | "/instances/new" | "/instances"
   id:
     | "__root__"
     | "/"
     | "/settings"
-    | "/apps/$appId"
-    | "/apps/new"
     | "/instances/$fid"
     | "/instances/new"
-    | "/apps/"
     | "/instances/"
-    | "/secrets/"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SettingsRoute: typeof SettingsRoute
-  AppsAppIdRoute: typeof AppsAppIdRoute
-  AppsNewRoute: typeof AppsNewRoute
   InstancesFidRoute: typeof InstancesFidRoute
   InstancesNewRoute: typeof InstancesNewRoute
-  AppsIndexRoute: typeof AppsIndexRoute
   InstancesIndexRoute: typeof InstancesIndexRoute
-  SecretsIndexRoute: typeof SecretsIndexRoute
 }
 
 declare module "@tanstack/react-router" {
@@ -163,25 +106,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/secrets/": {
-      id: "/secrets/"
-      path: "/secrets"
-      fullPath: "/secrets/"
-      preLoaderRoute: typeof SecretsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     "/instances/": {
       id: "/instances/"
       path: "/instances"
       fullPath: "/instances/"
       preLoaderRoute: typeof InstancesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    "/apps/": {
-      id: "/apps/"
-      path: "/apps"
-      fullPath: "/apps/"
-      preLoaderRoute: typeof AppsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/instances/new": {
@@ -198,33 +127,15 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof InstancesFidRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/apps/new": {
-      id: "/apps/new"
-      path: "/apps/new"
-      fullPath: "/apps/new"
-      preLoaderRoute: typeof AppsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    "/apps/$appId": {
-      id: "/apps/$appId"
-      path: "/apps/$appId"
-      fullPath: "/apps/$appId"
-      preLoaderRoute: typeof AppsAppIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
-  AppsAppIdRoute: AppsAppIdRoute,
-  AppsNewRoute: AppsNewRoute,
   InstancesFidRoute: InstancesFidRoute,
   InstancesNewRoute: InstancesNewRoute,
-  AppsIndexRoute: AppsIndexRoute,
   InstancesIndexRoute: InstancesIndexRoute,
-  SecretsIndexRoute: SecretsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -3,9 +3,14 @@
 export interface AppRequest {
   vault: string;
   name: string;
-  service_type: string;
+  service_type?: string;
   required_scopes?: string;
-  credentials_json: Record<string, unknown>;
+  credentials_json?: Record<string, unknown>;
+}
+
+export interface CreateVaultRequest {
+  vault: string;
+  name: string;
 }
 
 export interface AppListItem {
@@ -60,8 +65,16 @@ export interface SecretDetail {
   vault: string;
   item: string;
   has_secret: boolean;
+  secret_keys?: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface SecretData {
+  vault: string;
+  item: string;
+  secret_keys: string[];
+  data: Record<string, string>;
 }
 
 export interface CredentialsRequest {
