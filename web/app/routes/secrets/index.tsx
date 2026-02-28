@@ -22,7 +22,7 @@ export const Route = createFileRoute("/secrets/")({
     item: typeof search.item === "string" ? search.item : undefined,
   }),
   component: () => (
-    <AppShell>
+    <AppShell fullWidth>
       <Suspense fallback={<LoadingSkeleton />}>
         <SecretsPage />
       </Suspense>
@@ -67,7 +67,7 @@ function SecretsPage() {
   }
 
   return (
-    <div className="-mx-6 -mt-6 flex h-[calc(100vh-0px)]">
+    <div className="flex h-full">
       <div className="w-[200px] shrink-0">
         <VaultSidebar
           secrets={secrets}
@@ -110,7 +110,7 @@ function SecretsPage() {
 
 function LoadingSkeleton() {
   return (
-    <div className="-mx-6 -mt-6 flex h-[calc(100vh-0px)]">
+    <div className="flex h-full">
       <div className="w-[200px] shrink-0 border-r p-3 space-y-2">
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="h-8 animate-pulse rounded bg-muted" />

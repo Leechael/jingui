@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./sidebar-nav";
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, fullWidth }: { children: ReactNode; fullWidth?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl p-6">{children}</div>
+          <div className={fullWidth ? "h-full" : "mx-auto max-w-5xl p-6"}>{children}</div>
         </main>
       </div>
     </div>
