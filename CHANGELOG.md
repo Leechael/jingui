@@ -1,3 +1,12 @@
+## v0.1.3-beta.4 (2026-02-28)
+
+- fix: assert empty list body in BDD scenario for nonexistent vault
+- fix: address review findings from schema v2 migration
+- fix: align BDD feature expectations with actual handler responses
+- fix: update BDD tests and feature files for schema v2
+- feat: vault-centric schema restructure (schema v2)
+- feat: admin panel + CORS support (#9)
+
 ## v0.1.3-beta.3 (2026-02-28)
 
 - fix: key-based remount for item panel, reject JSON null in credentials
