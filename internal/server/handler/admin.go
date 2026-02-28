@@ -2,10 +2,13 @@ package handler
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"sort"
 
+	"github.com/aspect-build/jingui/internal/crypto"
 	"github.com/aspect-build/jingui/internal/server/db"
 	"github.com/gin-gonic/gin"
 )
@@ -114,9 +117,18 @@ func HandleDeleteApp(store *db.Store) gin.HandlerFunc {
 // --- Instances ---
 
 // HandleListInstances handles GET /v1/instances.
+// Accepts optional ?vault=X query param to filter by bound vault.
 func HandleListInstances(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		instances, err := store.ListInstances()
+		vault := c.Query("vault")
+
+		var instances []db.TEEInstance
+		var err error
+		if vault != "" {
+			instances, err = store.ListInstancesByVault(vault)
+		} else {
+			instances, err = store.ListInstances()
+		}
 		if err != nil {
 			log.Printf("ListInstances error: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list instances"})
@@ -190,8 +202,29 @@ func HandleListSecrets(store *db.Store) gin.HandlerFunc {
 	}
 }
 
+// decryptSecretKeys decrypts the encrypted secret blob and returns the sorted key names.
+func decryptSecretKeys(masterKey [32]byte, encrypted []byte) []string {
+	if len(encrypted) == 0 {
+		return nil
+	}
+	plaintext, err := crypto.DecryptAtRest(masterKey, encrypted)
+	if err != nil {
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal(plaintext, &m); err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // HandleGetSecret handles GET /v1/secrets/:vault/:item.
-func HandleGetSecret(store *db.Store) gin.HandlerFunc {
+func HandleGetSecret(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		vault := c.Param("vault")
 		item := c.Param("item")
@@ -205,12 +238,72 @@ func HandleGetSecret(store *db.Store) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"error": "secret not found"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
+
+		resp := gin.H{
 			"vault":      secret.Vault,
 			"item":       secret.Item,
 			"has_secret": len(secret.SecretEncrypted) > 0,
 			"created_at": secret.CreatedAt,
 			"updated_at": secret.UpdatedAt,
+		}
+		if keys := decryptSecretKeys(masterKey, secret.SecretEncrypted); keys != nil {
+			resp["secret_keys"] = keys
+		}
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// HandleGetSecretData handles GET /v1/secrets/:vault/:item/data.
+// Returns the full decrypted key-value pairs for a secret.
+func HandleGetSecretData(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		vault := c.Param("vault")
+		item := c.Param("item")
+		secret, err := store.GetVaultItem(vault, item)
+		if err != nil {
+			log.Printf("GetSecretData(%q, %q) error: %v", vault, item, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve secret"})
+			return
+		}
+		if secret == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "secret not found"})
+			return
+		}
+		if len(secret.SecretEncrypted) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"vault":       vault,
+				"item":        item,
+				"secret_keys": []string{},
+				"data":        map[string]string{},
+			})
+			return
+		}
+
+		plaintext, err := crypto.DecryptAtRest(masterKey, secret.SecretEncrypted)
+		if err != nil {
+			log.Printf("GetSecretData(%q, %q) decrypt error: %v", vault, item, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decrypt secret"})
+			return
+		}
+
+		var data map[string]string
+		if err := json.Unmarshal(plaintext, &data); err != nil {
+			log.Printf("GetSecretData(%q, %q) unmarshal error: %v", vault, item, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse secret data"})
+			return
+		}
+
+		keys := make([]string, 0, len(data))
+		for k := range data {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		c.JSON(http.StatusOK, gin.H{
+			"vault":       vault,
+			"item":        item,
+			"secret_keys": keys,
+			"data":        data,
 		})
 	}
 }

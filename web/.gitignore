@@ -1,0 +1,4 @@
+node_modules
+dist
+.vinxi
+app.config.timestamp_*

@@ -16,6 +16,7 @@ type Config struct {
 	ListenAddr  string
 	BaseURL     string
 	RATLSStrict bool
+	CORSOrigins []string
 }
 
 // LoadConfig loads server configuration from environment variables.
@@ -78,6 +79,16 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	var corsOrigins []string
+	if v := os.Getenv("JINGUI_CORS_ORIGINS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				corsOrigins = append(corsOrigins, o)
+			}
+		}
+	}
+
 	return &Config{
 		MasterKey:   masterKey,
 		AdminToken:  adminToken,
@@ -85,5 +96,6 @@ func LoadConfig() (*Config, error) {
 		ListenAddr:  listenAddr,
 		BaseURL:     baseURL,
 		RATLSStrict: ratlsStrict,
+		CORSOrigins: corsOrigins,
 	}, nil
 }

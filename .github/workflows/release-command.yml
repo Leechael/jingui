@@ -389,6 +389,37 @@ jobs:
             COMMIT=${{ github.sha }}
             DCAP_QVL_REF=c201e5e2b312
 
+      # ── Resolve actual GHCR digests (platform-specific, not index) ───
+      - name: Resolve GHCR digests
+        id: ghcr
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.release.outputs.version }}"
+          REPO="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+
+          get_platform_digest() {
+            local image="$1"
+            local raw
+            raw=$(docker buildx imagetools inspect "$image" --raw)
+            local media_type
+            media_type=$(echo "$raw" | jq -r '.mediaType // empty')
+
+            if echo "$media_type" | grep -qE 'manifest\.list|image\.index'; then
+              # Manifest index (provenance enabled) — extract linux/amd64 image digest
+              echo "$raw" | jq -r '.manifests[] | select(.platform.architecture == "amd64" and .platform.os == "linux") | .digest'
+            else
+              # Plain image manifest — compute digest from raw content
+              printf '%s' "$raw" | sha256sum | awk '{print "sha256:" $1}'
+            fi
+          }
+
+          SERVER_DIGEST=$(get_platform_digest "ghcr.io/${REPO}-server:${VERSION}")
+          CLIENT_DIGEST=$(get_platform_digest "ghcr.io/${REPO}:${VERSION}")
+
+          echo "server_digest=${SERVER_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "client_digest=${CLIENT_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
+
       # ── Update progress comment ──────────────────────────────────────
       - name: Update comment — docker success
         if: success()
@@ -396,8 +427,11 @@ jobs:
         with:
           script: |
             const version = '${{ needs.release.outputs.version }}';
-            const serverImage = `ghcr.io/${{ github.repository }}-server:${version}@${{ steps.push-server.outputs.digest }}`;
-            const clientImage = `ghcr.io/${{ github.repository }}:${version}@${{ steps.push-client.outputs.digest }}`;
+            const repo = '${{ steps.ghcr.outputs.repo }}';
+            const serverDigest = '${{ steps.ghcr.outputs.server_digest }}';
+            const clientDigest = '${{ steps.ghcr.outputs.client_digest }}';
+            const serverImage = `ghcr.io/${repo}-server:${version}@${serverDigest}`;
+            const clientImage = `ghcr.io/${repo}:${version}@${clientDigest}`;
             const body = [
               `### ✅ Released ${version}`,
               '',

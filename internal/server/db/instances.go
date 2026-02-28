@@ -78,6 +78,29 @@ func (s *Store) ListInstances() ([]TEEInstance, error) {
 	return instances, rows.Err()
 }
 
+// ListInstancesByVault returns all TEE instances bound to a specific vault.
+func (s *Store) ListInstancesByVault(vault string) ([]TEEInstance, error) {
+	rows, err := s.db.Query(
+		`SELECT fid, public_key, bound_app_id, bound_attestation_app_id, bound_item, label, created_at, last_used_at
+		 FROM tee_instances WHERE bound_app_id = ? ORDER BY created_at`,
+		vault,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list instances by vault: %w", err)
+	}
+	defer rows.Close()
+
+	var instances []TEEInstance
+	for rows.Next() {
+		var inst TEEInstance
+		if err := rows.Scan(&inst.FID, &inst.PublicKey, &inst.BoundVault, &inst.BoundAttestationAppID, &inst.BoundItem, &inst.Label, &inst.CreatedAt, &inst.LastUsedAt); err != nil {
+			return nil, fmt.Errorf("scan instance: %w", err)
+		}
+		instances = append(instances, inst)
+	}
+	return instances, rows.Err()
+}
+
 // DeleteInstance deletes a TEE instance by FID. Returns true if a row was deleted.
 func (s *Store) DeleteInstance(fid string) (bool, error) {
 	res, err := s.db.Exec(`DELETE FROM tee_instances WHERE fid = ?`, fid)
