@@ -18,3 +18,4 @@ Feature: Vault and item management
     Given the server is running
     When I GET items for vault "nonexistent"
     Then the response status should be 200
+    And the response should be an empty list

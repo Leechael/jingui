@@ -309,6 +309,17 @@ func (b *bddContext) theResponseJSONShouldBe(key, expected string) error {
 	return nil
 }
 
+func (b *bddContext) theResponseShouldBeAnEmptyList() error {
+	var list []interface{}
+	if err := json.Unmarshal(b.lastBody, &list); err != nil {
+		return fmt.Errorf("parse response as list: %w (body: %s)", err, b.lastBody)
+	}
+	if len(list) != 0 {
+		return fmt.Errorf("expected empty list, got %d elements", len(list))
+	}
+	return nil
+}
+
 func (b *bddContext) theDecryptedSecretShouldBe(ref, expected string) error {
 	b64, ok := b.fetchedSecrets[ref]
 	if !ok {
@@ -358,6 +369,7 @@ func TestBDD(t *testing.T) {
 			// Then
 			sc.Step(`^the response status should be (\d+)$`, b.theResponseStatusShouldBe)
 			sc.Step(`^the response JSON "([^"]*)" should be "([^"]*)"$`, b.theResponseJSONShouldBe)
+			sc.Step(`^the response should be an empty list$`, b.theResponseShouldBeAnEmptyList)
 			sc.Step(`^the decrypted secret "([^"]*)" should be "([^"]*)"$`, b.theDecryptedSecretShouldBe)
 		},
 		Options: &godog.Options{
