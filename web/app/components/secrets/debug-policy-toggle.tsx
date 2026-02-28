@@ -16,12 +16,17 @@ export function DebugPolicyToggle({ vault, item }: DebugPolicyToggleProps) {
     update.mutate({ allow_read_debug: !policy.allow_read_debug });
   }
 
+  const isDefault = policy?.source === "default";
+
   return (
     <div className="flex items-center justify-between">
       <div>
         <p className="text-sm font-medium">Debug Read</p>
         <p className="text-xs text-muted-foreground">
-          Allow debug read access for this secret
+          Allow plaintext read for this item
+          {isDefault && (
+            <span className="ml-1 text-muted-foreground/60">(default)</span>
+          )}
         </p>
       </div>
       <button

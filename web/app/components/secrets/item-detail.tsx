@@ -39,49 +39,42 @@ export function ItemDetail({ vault, item, onDeleted }: ItemDetailProps) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="space-y-6">
+        {/* Header: vault / item breadcrumb */}
         <div>
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            Vault
-          </p>
-          <p className="text-lg font-semibold">{detail.vault}</p>
+          <p className="text-xs text-muted-foreground">{detail.vault}</p>
+          <h3 className="text-lg font-semibold">{detail.item}</h3>
         </div>
 
-        <div>
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            Item
-          </p>
-          <p className="text-lg font-semibold">{detail.item}</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground">Has Secret</span>
-            <p className="font-medium">
-              {detail.has_secret ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                  Yes
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  No
-                </span>
-              )}
-            </p>
+        {/* Metadata */}
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Credentials</span>
+            {detail.has_secret ? (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                Stored
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                Empty
+              </span>
+            )}
           </div>
-          <div>
+          <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Created</span>
-            <p className="font-medium">{formatDateTime(detail.created_at)}</p>
+            <span>{formatDateTime(detail.created_at)}</span>
           </div>
-          <div>
+          <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Updated</span>
-            <p className="font-medium">{formatDateTime(detail.updated_at)}</p>
+            <span>{formatDateTime(detail.updated_at)}</span>
           </div>
         </div>
 
+        {/* Debug Policy */}
         <div className="border-t pt-4">
           <DebugPolicyToggle vault={vault} item={item} />
         </div>
 
+        {/* Actions */}
         <div className="flex gap-2 border-t pt-4">
           <button
             onClick={() => setShowStore(true)}
