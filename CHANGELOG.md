@@ -1,3 +1,18 @@
+## v0.1.3-beta.2 (2026-02-28)
+
+- fix: address code review findings
+- chore: remove vite temp file and gitignore it
+- feat: add admin panel SPA
+- build: load .env file in Makefile for local dev overrides
+- feat: add CORS support via JINGUI_CORS_ORIGINS env var
+- docs: align openapi.json response schemas and status codes with implementation
+- Release v0.1.3
+- fix: restore 403 for vault mismatch in BDD test
+- fix: update integration test to expect 404 for wrong item
+- docs: add op:// scheme to docs, fix status codes in API docs
+- fix: return 404 instead of 403 for item/field/vault not found
+- feat: update release command with progress comment lifecycle
+
 ## v0.1.3 (2026-02-27)
 
 - fix: restore 403 for vault mismatch in BDD test
