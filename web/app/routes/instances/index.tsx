@@ -28,7 +28,7 @@ function InstancesPage() {
     const q = search.toLowerCase();
     return (
       i.fid.toLowerCase().includes(q) ||
-      i.dstack_app_id.toLowerCase().includes(q) ||
+      (i.dstack_app_id ?? "").toLowerCase().includes(q) ||
       (i.label ?? "").toLowerCase().includes(q)
     );
   });
@@ -99,7 +99,7 @@ function InstancesPage() {
                       params={{ fid: inst.fid }}
                       className="font-mono text-xs font-medium text-primary hover:underline"
                     >
-                      {truncate(inst.dstack_app_id, 16)}
+                      {truncate(inst.dstack_app_id ?? "", 16) || "-"}
                     </Link>
                   </td>
                   <td className="px-4 py-3">{inst.label || "-"}</td>
