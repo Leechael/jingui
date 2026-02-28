@@ -23,7 +23,7 @@ export function CreateVaultDialog({
     const id = vaultId.trim();
     const n = name.trim() || id;
     createVault.mutate(
-      { vault: id, name: n },
+      { id, name: n },
       {
         onSuccess: () => {
           setVaultId("");

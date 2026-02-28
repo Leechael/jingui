@@ -1,19 +1,13 @@
 import { getSettings } from "./settings";
 import type {
-  AppRequest,
-  AppListItem,
-  AppDetail,
+  Vault,
   CreateVaultRequest,
+  UpdateVaultRequest,
   InstanceRequest,
   InstanceUpdateRequest,
   InstanceView,
-  SecretListItem,
-  SecretDetail,
-  SecretData,
-  CredentialsRequest,
   DebugPolicyResponse,
   DebugPolicyRequest,
-  DeviceFlowResponse,
   ApiError,
 } from "./types";
 
@@ -62,48 +56,94 @@ class JinguiClient {
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
   }
 
-  // Apps
-  listApps() {
-    return this.request<AppListItem[]>("/v1/apps");
+  // Vaults
+  listVaults() {
+    return this.request<Vault[]>("/v1/vaults");
   }
 
-  getApp(appId: string) {
-    return this.request<AppDetail>(`/v1/apps/${encodeURIComponent(appId)}`);
-  }
-
-  createApp(data: AppRequest) {
-    return this.request<{ vault: string; status: string }>("/v1/apps", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  updateApp(appId: string, data: AppRequest) {
-    return this.request<{ vault: string; status: string }>(
-      `/v1/apps/${encodeURIComponent(appId)}`,
-      { method: "PUT", body: JSON.stringify(data) },
-    );
-  }
-
-  deleteApp(appId: string, cascade = false) {
-    const qs = cascade ? "?cascade=true" : "";
-    return this.request<{ status: string; vault: string }>(
-      `/v1/apps/${encodeURIComponent(appId)}${qs}`,
-      { method: "DELETE" },
+  getVault(id: string) {
+    return this.request<Vault>(
+      `/v1/vaults/${encodeURIComponent(id)}`,
     );
   }
 
   createVault(data: CreateVaultRequest) {
-    return this.request<{ vault: string; status: string }>("/v1/apps", {
+    return this.request<{ id: string; status: string }>("/v1/vaults", {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
+  updateVault(id: string, data: UpdateVaultRequest) {
+    return this.request<{ id: string; status: string }>(
+      `/v1/vaults/${encodeURIComponent(id)}`,
+      { method: "PUT", body: JSON.stringify(data) },
+    );
+  }
+
+  deleteVault(id: string, cascade = false) {
+    const qs = cascade ? "?cascade=true" : "";
+    return this.request<{ status: string; id: string }>(
+      `/v1/vaults/${encodeURIComponent(id)}${qs}`,
+      { method: "DELETE" },
+    );
+  }
+
+  // Vault Items
+  listItems(vaultId: string) {
+    return this.request<string[]>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/items`,
+    );
+  }
+
+  getItem(vaultId: string, section: string) {
+    return this.request<{
+      vault_id: string;
+      section: string;
+      fields: Record<string, string>;
+    }>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(section)}`,
+    );
+  }
+
+  putItem(vaultId: string, section: string, fields: Record<string, string>) {
+    return this.request<{ status: string }>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(section)}`,
+      { method: "PUT", body: JSON.stringify({ fields }) },
+    );
+  }
+
+  deleteItem(vaultId: string, section: string) {
+    return this.request<{ status: string }>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(section)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  // Vault ↔ Instance Access
+  listVaultInstances(vaultId: string) {
+    return this.request<InstanceView[]>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/instances`,
+    );
+  }
+
+  grantVaultAccess(vaultId: string, fid: string) {
+    return this.request<{ status: string }>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/instances/${encodeURIComponent(fid)}`,
+      { method: "POST" },
+    );
+  }
+
+  revokeVaultAccess(vaultId: string, fid: string) {
+    return this.request<{ status: string }>(
+      `/v1/vaults/${encodeURIComponent(vaultId)}/instances/${encodeURIComponent(fid)}`,
+      { method: "DELETE" },
+    );
+  }
+
   // Instances
-  listInstances(vault?: string) {
-    const qs = vault ? `?vault=${encodeURIComponent(vault)}` : "";
-    return this.request<InstanceView[]>(`/v1/instances${qs}`);
+  listInstances() {
+    return this.request<InstanceView[]>("/v1/instances");
   }
 
   getInstance(fid: string) {
@@ -133,70 +173,21 @@ class JinguiClient {
     );
   }
 
-  // Secrets
-  listSecrets(vault?: string) {
-    const qs = vault ? `?vault=${encodeURIComponent(vault)}` : "";
-    return this.request<SecretListItem[]>(`/v1/secrets${qs}`);
-  }
-
-  getSecret(vault: string, item: string) {
-    return this.request<SecretDetail>(
-      `/v1/secrets/${encodeURIComponent(vault)}/${encodeURIComponent(item)}`,
-    );
-  }
-
-  getSecretData(vault: string, item: string) {
-    return this.request<SecretData>(
-      `/v1/secrets/${encodeURIComponent(vault)}/${encodeURIComponent(item)}/data`,
-    );
-  }
-
-  deleteSecret(vault: string, item: string, cascade = false) {
-    const qs = cascade ? "?cascade=true" : "";
-    return this.request<{ status: string; vault: string; item: string }>(
-      `/v1/secrets/${encodeURIComponent(vault)}/${encodeURIComponent(item)}${qs}`,
-      { method: "DELETE" },
-    );
-  }
-
-  // Credentials
-  putCredentials(appId: string, data: CredentialsRequest) {
-    return this.request<{ status: string; app_id: string; item: string }>(
-      `/v1/credentials/${encodeURIComponent(appId)}`,
-      { method: "PUT", body: JSON.stringify(data) },
-    );
-  }
-
-  // Returns the gateway URL without embedding the token.
-  // The server's gateway endpoint requires Bearer auth, which browser
-  // redirects (window.open) cannot carry. Use the Device Flow tab
-  // instead, or configure the server for cookie-based auth on this endpoint.
-  getOAuthGatewayUrl(appId: string): string {
-    return `${this.apiUrl}/v1/credentials/gateway/${encodeURIComponent(appId)}`;
-  }
-
-  startDeviceFlow(appId: string) {
-    return this.request<DeviceFlowResponse>(
-      `/v1/credentials/device/${encodeURIComponent(appId)}`,
-      { method: "POST" },
-    );
-  }
-
   // Debug Policy
-  getDebugPolicy(vault: string, item: string) {
+  getDebugPolicy(vaultId: string, fid: string) {
     return this.request<DebugPolicyResponse>(
-      `/v1/debug-policy/${encodeURIComponent(vault)}/${encodeURIComponent(item)}`,
+      `/v1/debug-policy/${encodeURIComponent(vaultId)}/${encodeURIComponent(fid)}`,
     );
   }
 
-  updateDebugPolicy(vault: string, item: string, data: DebugPolicyRequest) {
+  updateDebugPolicy(vaultId: string, fid: string, data: DebugPolicyRequest) {
     return this.request<{
       status: string;
-      vault: string;
-      item: string;
-      allow_read_debug: boolean;
+      vault_id: string;
+      fid: string;
+      allow_read: boolean;
     }>(
-      `/v1/debug-policy/${encodeURIComponent(vault)}/${encodeURIComponent(item)}`,
+      `/v1/debug-policy/${encodeURIComponent(vaultId)}/${encodeURIComponent(fid)}`,
       { method: "PUT", body: JSON.stringify(data) },
     );
   }

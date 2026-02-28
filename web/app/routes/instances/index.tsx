@@ -28,9 +28,7 @@ function InstancesPage() {
     const q = search.toLowerCase();
     return (
       i.fid.toLowerCase().includes(q) ||
-      i.bound_attestation_app_id.toLowerCase().includes(q) ||
-      i.bound_vault.toLowerCase().includes(q) ||
-      i.bound_item.toLowerCase().includes(q) ||
+      i.dstack_app_id.toLowerCase().includes(q) ||
       (i.label ?? "").toLowerCase().includes(q)
     );
   });
@@ -86,11 +84,9 @@ function InstancesPage() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="px-4 py-3 text-left font-medium">
-                  Attestation App ID
+                  Dstack App ID
                 </th>
                 <th className="px-4 py-3 text-left font-medium">Label</th>
-                <th className="px-4 py-3 text-left font-medium">Vault</th>
-                <th className="px-4 py-3 text-left font-medium">Item</th>
                 <th className="px-4 py-3 text-left font-medium">Created</th>
               </tr>
             </thead>
@@ -103,16 +99,10 @@ function InstancesPage() {
                       params={{ fid: inst.fid }}
                       className="font-mono text-xs font-medium text-primary hover:underline"
                     >
-                      {truncate(inst.bound_attestation_app_id, 16)}
+                      {truncate(inst.dstack_app_id, 16)}
                     </Link>
                   </td>
                   <td className="px-4 py-3">{inst.label || "-"}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">
-                      {inst.bound_vault}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">{inst.bound_item}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {formatDate(inst.created_at)}
                   </td>

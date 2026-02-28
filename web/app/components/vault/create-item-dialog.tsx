@@ -4,7 +4,7 @@ import {
   createPair,
   type KeyValuePair,
 } from "~/components/shared/key-value-editor";
-import { usePutCredentials } from "~/lib/mutations";
+import { usePutItem } from "~/lib/mutations";
 
 interface CreateItemDialogProps {
   open: boolean;
@@ -21,7 +21,7 @@ export function CreateItemDialog({
 }: CreateItemDialogProps) {
   const [itemName, setItemName] = useState("");
   const [pairs, setPairs] = useState<KeyValuePair[]>([createPair()]);
-  const putCreds = usePutCredentials(vault);
+  const putItem = usePutItem(vault);
 
   if (!open) return null;
 
@@ -30,15 +30,15 @@ export function CreateItemDialog({
     const name = itemName.trim();
     if (!name) return;
 
-    const secrets: Record<string, string> = {};
+    const fields: Record<string, string> = {};
     for (const p of pairs) {
       if (p.key.trim()) {
-        secrets[p.key.trim()] = p.value;
+        fields[p.key.trim()] = p.value;
       }
     }
 
-    putCreds.mutate(
-      { item: name, secrets },
+    putItem.mutate(
+      { section: name, fields },
       {
         onSuccess: () => {
           setItemName("");
@@ -81,16 +81,16 @@ export function CreateItemDialog({
               type="button"
               onClick={onClose}
               className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
-              disabled={putCreds.isPending}
+              disabled={putItem.isPending}
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={!itemName.trim() || putCreds.isPending}
+              disabled={!itemName.trim() || putItem.isPending}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {putCreds.isPending ? "Creating..." : "Create"}
+              {putItem.isPending ? "Creating..." : "Create"}
             </button>
           </div>
         </form>

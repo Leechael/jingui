@@ -19,13 +19,11 @@ func main() {
 	flag.BoolVar(showVersion, "v", false, "Print version and exit")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s\n\n", version.String("jingui-server"))
-		fmt.Fprintf(os.Stderr, "Jingui server stores OAuth app credentials and serves encrypted secrets to TEE instances.\n\n")
+		fmt.Fprintf(os.Stderr, "Jingui server stores vault secrets and serves encrypted values to TEE instances.\n\n")
 		fmt.Fprintf(os.Stderr, "Environment variables:\n")
-		fmt.Fprintf(os.Stderr, "  JINGUI_MASTER_KEY   Master encryption key (64 hex chars, required)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_ADMIN_TOKEN  Admin Bearer token for management APIs (min 16 chars, required)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_DB_PATH      SQLite database path (default: jingui.db)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_LISTEN_ADDR  Listen address (default: :8080)\n")
-		fmt.Fprintf(os.Stderr, "  JINGUI_BASE_URL     Public base URL for OAuth callbacks (default: http://localhost:<port>)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_RATLS_STRICT Enforce strict RA-TLS mode for secret fetch flow (default: true)\n")
 		fmt.Fprintf(os.Stderr, "  JINGUI_LOG_LEVEL   Log level for server logs: debug|info|warn|error (default: info)\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
@@ -55,7 +53,7 @@ func main() {
 
 	r := server.NewRouter(store, cfg)
 	log.Print(version.String("jingui-server"))
-	logx.Infof("server config: ratls_strict=%v base_url=%s", cfg.RATLSStrict, cfg.BaseURL)
+	logx.Infof("server config: ratls_strict=%v", cfg.RATLSStrict)
 
 	log.Printf("jingui-server listening on %s", cfg.ListenAddr)
 	if err := r.Run(cfg.ListenAddr); err != nil {

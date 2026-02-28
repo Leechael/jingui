@@ -2,41 +2,38 @@ package db
 
 import "time"
 
-// App represents a registered OAuth application.
-type App struct {
-	Vault                string    `json:"vault"`
-	Name                 string    `json:"name"`
-	ServiceType          string    `json:"service_type"`
-	RequiredScopes       string    `json:"required_scopes"`
-	CredentialsEncrypted []byte    `json:"-"`
-	CreatedAt            time.Time `json:"created_at"`
+// Vault represents a secret vault (replaces the old App concept).
+type Vault struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// VaultItem represents an OAuth token stored for an item+vault combination.
+// VaultItem represents a single field stored in a vault.
 type VaultItem struct {
-	Vault           string    `json:"vault"`
-	Item            string    `json:"item"`
-	SecretEncrypted []byte    `json:"-"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID        int64     `json:"id"`
+	VaultID   string    `json:"vault_id"`
+	ItemName  string    `json:"item_name"`
+	Section   *string   `json:"section"`
+	Value     string    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TEEInstance represents a registered TEE instance with its public key.
 type TEEInstance struct {
-	FID                   string     `json:"fid"`
-	PublicKey             []byte     `json:"public_key"`
-	BoundVault            string     `json:"bound_vault"`
-	BoundAttestationAppID string     `json:"bound_attestation_app_id"`
-	BoundItem             string     `json:"bound_item"`
-	Label                 string     `json:"label"`
-	CreatedAt             time.Time  `json:"created_at"`
-	LastUsedAt            *time.Time `json:"last_used_at"`
+	FID         string     `json:"fid"`
+	Label       string     `json:"label"`
+	PublicKey   []byte     `json:"public_key"`
+	DstackAppID string     `json:"dstack_app_id"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
 }
 
-// DebugPolicy controls whether an item may run jingui read in runtime.
+// DebugPolicy controls whether debug read is allowed for a vault+instance pair.
 type DebugPolicy struct {
-	Vault          string    `json:"vault"`
-	Item           string    `json:"item"`
-	AllowReadDebug bool      `json:"allow_read_debug"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	VaultID   string    `json:"vault_id"`
+	FID       string    `json:"fid"`
+	AllowRead bool      `json:"allow_read"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

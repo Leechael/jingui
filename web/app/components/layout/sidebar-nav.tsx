@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { Inbox, Server, Settings, Plus, Vault } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { getSettings } from "~/lib/settings";
-import { appsQuery, secretsQuery } from "~/lib/queries";
+import { vaultsQuery, vaultItemsQuery } from "~/lib/queries";
 import { SearchFilter } from "~/components/shared/search-filter";
 import { CreateVaultDialog } from "~/components/vault/create-vault-dialog";
 
@@ -60,32 +60,21 @@ export function SidebarNav() {
 }
 
 function VaultList({ selectedVault }: { selectedVault: string | null }) {
-  const { data: apps } = useQuery(appsQuery());
-  const { data: secrets } = useQuery(secretsQuery());
+  const { data: vaults } = useQuery(vaultsQuery());
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const navigate = useNavigate();
 
-  const vaultCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    if (secrets) {
-      for (const s of secrets) {
-        counts[s.vault] = (counts[s.vault] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [secrets]);
-
   const filtered = useMemo(() => {
-    if (!apps) return [];
-    if (!search) return apps;
+    if (!vaults) return [];
+    if (!search) return vaults;
     const q = search.toLowerCase();
-    return apps.filter(
-      (a) =>
-        a.vault.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q),
+    return vaults.filter(
+      (v) =>
+        v.id.toLowerCase().includes(q) ||
+        v.name.toLowerCase().includes(q),
     );
-  }, [apps, search]);
+  }, [vaults, search]);
 
   return (
     <>
@@ -103,40 +92,25 @@ function VaultList({ selectedVault }: { selectedVault: string | null }) {
           />
         </div>
         <div className="flex-1 overflow-y-auto px-3 space-y-0.5">
-          {filtered.map((app) => {
-            const isActive = selectedVault === app.vault;
-            const count = vaultCounts[app.vault] ?? 0;
+          {filtered.map((vault) => {
+            const isActive = selectedVault === vault.id;
             return (
-              <button
-                key={app.vault}
+              <VaultEntry
+                key={vault.id}
+                vaultId={vault.id}
+                isActive={isActive}
                 onClick={() =>
-                  navigate({ to: "/", search: { vault: app.vault } })
+                  navigate({ to: "/", search: { vault: vault.id } })
                 }
-                className={cn(
-                  "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors text-left",
-                  isActive
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                <span className="flex items-center gap-2 truncate">
-                  <Vault className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{app.vault}</span>
-                </span>
-                {count > 0 && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {count}
-                  </span>
-                )}
-              </button>
+              />
             );
           })}
-          {filtered.length === 0 && apps && apps.length > 0 && (
+          {filtered.length === 0 && vaults && vaults.length > 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
               No matching vaults
             </p>
           )}
-          {apps && apps.length === 0 && (
+          {vaults && vaults.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
               No vaults yet
             </p>
@@ -161,5 +135,40 @@ function VaultList({ selectedVault }: { selectedVault: string | null }) {
         }
       />
     </>
+  );
+}
+
+function VaultEntry({
+  vaultId,
+  isActive,
+  onClick,
+}: {
+  vaultId: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const { data: items } = useQuery(vaultItemsQuery(vaultId));
+  const count = items?.length ?? 0;
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors text-left",
+        isActive
+          ? "bg-accent text-accent-foreground font-medium"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+      )}
+    >
+      <span className="flex items-center gap-2 truncate">
+        <Vault className="h-4 w-4 shrink-0" />
+        <span className="truncate">{vaultId}</span>
+      </span>
+      {count > 0 && (
+        <span className="ml-2 text-xs text-muted-foreground">
+          {count}
+        </span>
+      )}
+    </button>
   );
 }

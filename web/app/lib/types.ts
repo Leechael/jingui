@@ -1,103 +1,53 @@
-// Types derived from docs/openapi.json schemas
+// Types for the new vault-centric schema
 
-export interface AppRequest {
-  vault: string;
+// Vault (replaces App)
+export interface Vault {
+  id: string;
   name: string;
-  service_type?: string;
-  required_scopes?: string;
-  credentials_json?: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface CreateVaultRequest {
-  vault: string;
+  id: string;
   name: string;
 }
 
-export interface AppListItem {
-  vault: string;
+export interface UpdateVaultRequest {
   name: string;
-  service_type: string;
-  required_scopes: string;
-  created_at: string;
 }
 
-export interface AppDetail {
-  vault: string;
-  name: string;
-  service_type: string;
-  required_scopes: string;
-  has_credentials: boolean;
-  created_at: string;
-}
-
-export interface InstanceRequest {
-  public_key: string;
-  bound_vault: string;
-  bound_attestation_app_id: string;
-  bound_item: string;
-  label?: string;
-}
-
-export interface InstanceUpdateRequest {
-  bound_attestation_app_id: string;
-  label?: string;
-}
-
+// TEE Instances
 export interface InstanceView {
   fid: string;
   public_key: string;
-  bound_vault: string;
-  bound_attestation_app_id: string;
-  bound_item: string;
+  dstack_app_id: string;
   label: string;
   created_at: string;
   last_used_at: string | null;
 }
 
-export interface SecretListItem {
-  vault: string;
-  item: string;
-  created_at: string;
-  updated_at: string;
+export interface InstanceRequest {
+  public_key: string;
+  dstack_app_id: string;
+  label?: string;
 }
 
-export interface SecretDetail {
-  vault: string;
-  item: string;
-  has_secret: boolean;
-  secret_keys?: string[];
-  created_at: string;
-  updated_at: string;
+export interface InstanceUpdateRequest {
+  dstack_app_id: string;
+  label?: string;
 }
 
-export interface SecretData {
-  vault: string;
-  item: string;
-  secret_keys: string[];
-  data: Record<string, string>;
-}
-
-export interface CredentialsRequest {
-  item: string;
-  secrets: Record<string, string>;
-}
-
+// Debug Policy
 export interface DebugPolicyRequest {
-  allow_read_debug: boolean;
+  allow_read: boolean;
 }
 
 export interface DebugPolicyResponse {
-  vault: string;
-  item: string;
-  allow_read_debug: boolean;
+  vault_id: string;
+  fid: string;
+  allow_read: boolean;
   source?: string;
   updated_at?: string;
-}
-
-export interface DeviceFlowResponse {
-  user_code: string;
-  verification_url: string;
-  expires_in: number;
 }
 
 export interface ApiError {

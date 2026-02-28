@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Trash2, Vault } from "lucide-react";
-import { appDetailQuery, instancesByVaultQuery } from "~/lib/queries";
-import { useDeleteApp } from "~/lib/mutations";
+import { vaultDetailQuery, vaultInstancesQuery } from "~/lib/queries";
+import { useDeleteVault } from "~/lib/mutations";
 import { ConfirmDeleteDialog } from "~/components/shared/confirm-delete-dialog";
 import { formatDateTime } from "~/lib/utils";
 
@@ -12,9 +12,9 @@ interface VaultDetailPanelProps {
 }
 
 export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
-  const { data: app, isLoading } = useQuery(appDetailQuery(vault));
-  const { data: instances } = useQuery(instancesByVaultQuery(vault));
-  const deleteApp = useDeleteApp();
+  const { data: vaultData, isLoading } = useQuery(vaultDetailQuery(vault));
+  const { data: instances } = useQuery(vaultInstancesQuery(vault));
+  const deleteVault = useDeleteVault();
   const [showDelete, setShowDelete] = useState(false);
 
   if (isLoading) {
@@ -28,7 +28,7 @@ export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
     );
   }
 
-  if (!app) return null;
+  if (!vaultData) return null;
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -38,45 +38,19 @@ export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
             <Vault className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold">{app.name}</h3>
-            <p className="text-sm text-muted-foreground">{app.vault}</p>
+            <h3 className="text-lg font-semibold">{vaultData.name}</h3>
+            <p className="text-sm text-muted-foreground">{vaultData.id}</p>
           </div>
         </div>
 
         <div className="space-y-3 text-sm">
-          {app.service_type && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Service Type</span>
-              <span className="inline-flex items-center rounded-full bg-accent px-2 py-0.5 text-xs font-medium">
-                {app.service_type}
-              </span>
-            </div>
-          )}
-          {app.required_scopes && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Scopes</span>
-              <span className="text-xs">{app.required_scopes}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">OAuth Credentials</span>
-            {app.has_credentials ? (
-              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                Configured
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                None
-              </span>
-            )}
-          </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Instances</span>
             <span>{instances?.length ?? 0}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Created</span>
-            <span>{formatDateTime(app.created_at)}</span>
+            <span>{formatDateTime(vaultData.created_at)}</span>
           </div>
         </div>
 
@@ -95,8 +69,8 @@ export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
         open={showDelete}
         onClose={() => setShowDelete(false)}
         onConfirm={(cascade) =>
-          deleteApp.mutate(
-            { appId: vault, cascade },
+          deleteVault.mutate(
+            { id: vault, cascade },
             {
               onSuccess: () => {
                 setShowDelete(false);
@@ -108,8 +82,8 @@ export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
         title="Delete Vault"
         description={`This will permanently delete the vault "${vault}" and all its configuration.`}
         showCascade
-        cascadeLabel="Also delete all items and instances"
-        isPending={deleteApp.isPending}
+        cascadeLabel="Also delete all items and instance access"
+        isPending={deleteVault.isPending}
       />
     </div>
   );

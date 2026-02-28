@@ -9,18 +9,14 @@ interface InstanceFormProps {
 
 export function InstanceForm({ onSubmit, isPending, error }: InstanceFormProps) {
   const [publicKey, setPublicKey] = useState("");
-  const [boundVault, setBoundVault] = useState("");
-  const [boundAttestationAppId, setBoundAttestationAppId] = useState("");
-  const [boundItem, setBoundItem] = useState("");
+  const [dstackAppId, setDstackAppId] = useState("");
   const [label, setLabel] = useState("");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     onSubmit({
       public_key: publicKey,
-      bound_vault: boundVault,
-      bound_attestation_app_id: boundAttestationAppId,
-      bound_item: boundItem,
+      dstack_app_id: dstackAppId,
       label: label || undefined,
     });
   }
@@ -44,35 +40,11 @@ export function InstanceForm({ onSubmit, isPending, error }: InstanceFormProps) 
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium">Bound Vault</label>
+        <label className="text-sm font-medium">Dstack App ID</label>
         <input
           type="text"
-          value={boundVault}
-          onChange={(e) => setBoundVault(e.target.value)}
-          required
-          placeholder="my-gmail"
-          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus-visible:ring-2"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Bound Item</label>
-        <input
-          type="text"
-          value={boundItem}
-          onChange={(e) => setBoundItem(e.target.value)}
-          required
-          placeholder="alice@gmail.com"
-          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus-visible:ring-2"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Attestation App ID</label>
-        <input
-          type="text"
-          value={boundAttestationAppId}
-          onChange={(e) => setBoundAttestationAppId(e.target.value)}
+          value={dstackAppId}
+          onChange={(e) => setDstackAppId(e.target.value)}
           required
           placeholder="Hex-encoded RA-TLS identity"
           className="h-9 w-full rounded-md border border-input bg-background px-3 font-mono text-sm outline-none ring-ring focus-visible:ring-2"
