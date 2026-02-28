@@ -1,22 +1,20 @@
-Feature: Credential management
+Feature: Vault and item management
   As an admin operator
-  I need to register apps and store credentials
+  I need to create vaults and store items
   So that TEE instances can later fetch secrets
 
-  Scenario: Register app and store credentials via PUT
+  Scenario: Create vault and store items via PUT
     Given the server is running
-    When I register an app "desktop-app" of type "gmail" with credentials:
-      """
-      {"installed":{"client_id":"cid-123","client_secret":"csec-456","redirect_uris":["http://localhost"]}}
-      """
+    When I create a vault "my-vault" with name "My Vault"
     Then the response status should be 201
-    When I PUT credentials for app "desktop-app" with user "alice@example.com" and secrets:
+    When I PUT items for vault "my-vault" section "alice@example.com" with fields:
       | key           | value              |
       | refresh_token | rt-alice-secret    |
+      | api_key       | key-123            |
     Then the response status should be 200
-    And the response JSON "status" should be "stored"
+    And the response JSON "status" should be "ok"
 
-  Scenario: Reject device flow for missing app
+  Scenario: Reject fetching items from nonexistent vault
     Given the server is running
-    When I POST to "/v1/credentials/device/nonexistent-app"
+    When I GET items for vault "nonexistent"
     Then the response status should be 404

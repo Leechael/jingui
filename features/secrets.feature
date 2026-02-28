@@ -5,14 +5,13 @@ Feature: Secret fetching via challenge-response
 
   Background:
     Given the server is running
-    And an app "gmail-app" of type "gmail" exists with credentials:
-      """
-      {"installed":{"client_id":"test-cid","client_secret":"test-csec","redirect_uris":["http://localhost"]}}
-      """
-    And user "user@example.com" has secrets for app "gmail-app":
+    And a vault "gmail-app" exists with items for "user@example.com":
       | key           | value                |
+      | client_id     | test-cid             |
+      | client_secret | test-csec            |
       | refresh_token | rt-user-secret-value |
-    And a TEE instance is registered for app "gmail-app" and user "user@example.com"
+    And a TEE instance is registered with dstack app id "gmail-app"
+    And the instance has access to vault "gmail-app"
 
   Scenario: Full challenge-response flow to fetch secrets
     When I request a challenge for the TEE instance
@@ -38,7 +37,7 @@ Feature: Secret fetching via challenge-response
       """
     Then the response status should be 401
 
-  Scenario: Reject fetch with mismatched app_id binding
+  Scenario: Reject fetch for vault without access
     When I request a challenge for the TEE instance
     And I solve the challenge and fetch secrets:
       | ref                                                |
