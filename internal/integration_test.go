@@ -424,9 +424,16 @@ func TestVaultItems_HTTP(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET item: expected 200, got %d", resp.StatusCode)
 	}
-	fields := itemBody["fields"].(map[string]interface{})
-	if fields["password"] != "secret" || fields["api_key"] != "key123" {
-		t.Errorf("unexpected fields: %v", fields)
+	rawKeys, ok := itemBody["keys"].([]interface{})
+	if !ok {
+		t.Fatalf("expected keys array, got %v", itemBody["keys"])
+	}
+	keySet := make(map[string]bool, len(rawKeys))
+	for _, k := range rawKeys {
+		keySet[k.(string)] = true
+	}
+	if !keySet["password"] || !keySet["api_key"] {
+		t.Errorf("expected keys to contain password and api_key, got %v", rawKeys)
 	}
 
 	// Delete item

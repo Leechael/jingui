@@ -310,6 +310,14 @@ func (b *bddContext) theResponseJSONShouldBe(key, expected string) error {
 }
 
 func (b *bddContext) theResponseShouldBeAnEmptyList() error {
+	var raw json.RawMessage
+	if err := json.Unmarshal(b.lastBody, &raw); err != nil {
+		return fmt.Errorf("parse response: %w (body: %s)", err, b.lastBody)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return fmt.Errorf("expected JSON array, got: %s", b.lastBody)
+	}
 	var list []interface{}
 	if err := json.Unmarshal(b.lastBody, &list); err != nil {
 		return fmt.Errorf("parse response as list: %w (body: %s)", err, b.lastBody)
