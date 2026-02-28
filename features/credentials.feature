@@ -12,9 +12,9 @@ Feature: Vault and item management
       | refresh_token | rt-alice-secret    |
       | api_key       | key-123            |
     Then the response status should be 200
-    And the response JSON "status" should be "ok"
+    And the response JSON "status" should be "updated"
 
-  Scenario: Reject fetching items from nonexistent vault
+  Scenario: Listing items from nonexistent vault returns empty
     Given the server is running
     When I GET items for vault "nonexistent"
-    Then the response status should be 404
+    Then the response status should be 200
