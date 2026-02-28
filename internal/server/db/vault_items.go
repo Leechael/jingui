@@ -122,6 +122,43 @@ func (s *Store) ListSections(vaultID string) ([]string, error) {
 	return sections, rows.Err()
 }
 
+// MergeItemFields upserts provided fields and deletes specified keys without
+// touching other existing fields in the section.
+func (s *Store) MergeItemFields(vaultID, section string, upsert map[string]string, deleteKeys []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, key := range deleteKeys {
+		if _, err := tx.Exec(
+			`DELETE FROM vault_items WHERE vault_id = ? AND section = ? AND item_name = ?`,
+			vaultID, section, key,
+		); err != nil {
+			return fmt.Errorf("delete key %q: %w", key, err)
+		}
+	}
+
+	for name, value := range upsert {
+		if _, err := tx.Exec(
+			`INSERT INTO vault_items (vault_id, section, item_name, value)
+			 VALUES (?, ?, ?, ?)
+			 ON CONFLICT(vault_id, section, item_name) DO UPDATE SET
+			   value = excluded.value,
+			   updated_at = CURRENT_TIMESTAMP`,
+			vaultID, section, name, value,
+		); err != nil {
+			return fmt.Errorf("upsert field %q: %w", name, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
 // DeleteSection deletes all fields in a section. Returns true if any rows were deleted.
 func (s *Store) DeleteSection(vaultID, section string) (bool, error) {
 	res, err := s.db.Exec(

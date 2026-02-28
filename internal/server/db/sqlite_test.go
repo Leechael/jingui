@@ -310,6 +310,63 @@ func TestDeleteField(t *testing.T) {
 	}
 }
 
+func TestMergeItemFields(t *testing.T) {
+	s := newTestStore(t)
+	s.CreateVault(&Vault{ID: "v1", Name: "V1"})
+
+	// Seed two fields
+	s.SetItemFields("v1", "sec1", map[string]string{"a": "1", "b": "2", "c": "3"})
+
+	// Merge: upsert a (update) + d (insert), delete c
+	err := s.MergeItemFields("v1", "sec1", map[string]string{"a": "10", "d": "4"}, []string{"c"})
+	if err != nil {
+		t.Fatalf("MergeItemFields: %v", err)
+	}
+
+	items, _ := s.GetItemFields("v1", "sec1")
+	got := make(map[string]string, len(items))
+	for _, it := range items {
+		got[it.ItemName] = it.Value
+	}
+
+	// a updated, b untouched, c deleted, d added
+	if got["a"] != "10" {
+		t.Errorf("expected a=10, got %q", got["a"])
+	}
+	if got["b"] != "2" {
+		t.Errorf("expected b=2, got %q", got["b"])
+	}
+	if _, ok := got["c"]; ok {
+		t.Error("expected c to be deleted")
+	}
+	if got["d"] != "4" {
+		t.Errorf("expected d=4, got %q", got["d"])
+	}
+	if len(got) != 3 {
+		t.Errorf("expected 3 fields, got %d: %v", len(got), got)
+	}
+
+	// Merge with only deletes
+	err = s.MergeItemFields("v1", "sec1", nil, []string{"b"})
+	if err != nil {
+		t.Fatalf("MergeItemFields delete-only: %v", err)
+	}
+	items, _ = s.GetItemFields("v1", "sec1")
+	if len(items) != 2 {
+		t.Errorf("expected 2 fields after delete, got %d", len(items))
+	}
+
+	// Merge with only upserts
+	err = s.MergeItemFields("v1", "sec1", map[string]string{"e": "5"}, nil)
+	if err != nil {
+		t.Fatalf("MergeItemFields upsert-only: %v", err)
+	}
+	items, _ = s.GetItemFields("v1", "sec1")
+	if len(items) != 3 {
+		t.Errorf("expected 3 fields after upsert, got %d", len(items))
+	}
+}
+
 func TestTEEInstanceCRUD(t *testing.T) {
 	s := newTestStore(t)
 

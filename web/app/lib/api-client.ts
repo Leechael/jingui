@@ -100,16 +100,24 @@ class JinguiClient {
     return this.request<{
       vault_id: string;
       section: string;
-      fields: Record<string, string>;
+      keys: string[];
     }>(
       `/v1/vaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(section)}`,
     );
   }
 
-  putItem(vaultId: string, section: string, fields: Record<string, string>) {
+  putItem(
+    vaultId: string,
+    section: string,
+    fields: Record<string, string>,
+    deleteKeys?: string[],
+  ) {
     return this.request<{ status: string }>(
       `/v1/vaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(section)}`,
-      { method: "PUT", body: JSON.stringify({ fields }) },
+      {
+        method: "PUT",
+        body: JSON.stringify({ fields, delete: deleteKeys }),
+      },
     );
   }
 

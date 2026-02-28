@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Eye, EyeOff, Copy, Pencil, Trash2, Check } from "lucide-react";
+import { Pencil, Trash2, Check, Link2 } from "lucide-react";
 import { vaultItemDetailQuery } from "~/lib/queries";
 import { usePutItem, useDeleteItem } from "~/lib/mutations";
 import { ConfirmDeleteDialog } from "~/components/shared/confirm-delete-dialog";
@@ -30,13 +30,14 @@ export function ItemDetailPanel({
 
   const [editing, setEditing] = useState(false);
   const [pairs, setPairs] = useState<KeyValuePair[]>([]);
+  const [originalKeys, setOriginalKeys] = useState<string[]>([]);
   const [showDelete, setShowDelete] = useState(false);
-  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
   function startEditing() {
-    const fields = itemData?.fields ?? {};
-    const initial = Object.entries(fields).map(([k, v]) => createPair(k, v));
+    const keys = itemData?.keys ?? [];
+    setOriginalKeys(keys);
+    const initial = keys.map((k) => createPair(k, ""));
     if (initial.length === 0) initial.push(createPair());
     setPairs(initial);
     setEditing(true);
@@ -45,40 +46,40 @@ export function ItemDetailPanel({
   function cancelEditing() {
     setEditing(false);
     setPairs([]);
+    setOriginalKeys([]);
   }
 
   function handleSave() {
     const fields: Record<string, string> = {};
+    const currentKeys = new Set<string>();
     for (const p of pairs) {
-      if (p.key.trim()) {
-        fields[p.key.trim()] = p.value;
+      const key = p.key.trim();
+      if (key) {
+        currentKeys.add(key);
+        if (p.value) {
+          fields[key] = p.value;
+        }
       }
     }
+    const deleteKeys = originalKeys.filter((k) => !currentKeys.has(k));
+
     putItem.mutate(
-      { section: item, fields },
+      { section: item, fields, delete: deleteKeys },
       {
         onSuccess: () => {
           setEditing(false);
           setPairs([]);
+          setOriginalKeys([]);
         },
       },
     );
   }
 
-  function toggleReveal(key: string) {
-    setRevealedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function copyValue(key: string, value: string) {
-    navigator.clipboard.writeText(value);
-    setCopiedKey(key);
-    addToast("Copied to clipboard");
-    setTimeout(() => setCopiedKey(null), 2000);
+  function copyRef(key: string) {
+    navigator.clipboard.writeText(`jingui://${vault}/${item}/${key}`);
+    setCopiedRef(key);
+    addToast("Reference URI copied");
+    setTimeout(() => setCopiedRef(null), 2000);
   }
 
   if (isLoading) {
@@ -95,7 +96,7 @@ export function ItemDetailPanel({
 
   if (!itemData) return null;
 
-  const fields = itemData.fields ?? {};
+  const keys = itemData.keys ?? [];
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -120,6 +121,9 @@ export function ItemDetailPanel({
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">Fields</label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Leave value blank to keep current value unchanged.
+              </p>
               <KeyValueEditor pairs={pairs} onChange={setPairs} />
             </div>
             <div className="flex gap-2">
@@ -141,8 +145,8 @@ export function ItemDetailPanel({
           </div>
         ) : (
           <div className="space-y-1">
-            {Object.keys(fields).length > 0 ? (
-              Object.entries(fields).map(([key, value]) => (
+            {keys.length > 0 ? (
+              keys.map((key) => (
                 <div
                   key={key}
                   className="flex items-center justify-between rounded-md border px-4 py-3"
@@ -151,33 +155,20 @@ export function ItemDetailPanel({
                     <p className="text-xs font-medium text-muted-foreground">
                       {key}
                     </p>
-                    <p className="text-sm font-mono truncate">
-                      {revealedKeys.has(key)
-                        ? value
-                        : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}
+                    <p className="text-sm font-mono truncate text-muted-foreground">
+                      ••••••••
                     </p>
                   </div>
                   <div className="flex items-center gap-1 ml-3 shrink-0">
                     <button
-                      onClick={() => toggleReveal(key)}
+                      onClick={() => copyRef(key)}
                       className="rounded-md p-1.5 hover:bg-accent transition-colors"
-                      title={revealedKeys.has(key) ? "Hide" : "Reveal"}
+                      title="Copy reference URI"
                     >
-                      {revealedKeys.has(key) ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => copyValue(key, value)}
-                      className="rounded-md p-1.5 hover:bg-accent transition-colors"
-                      title="Copy"
-                    >
-                      {copiedKey === key ? (
+                      {copiedRef === key ? (
                         <Check className="h-4 w-4 text-green-600" />
                       ) : (
-                        <Copy className="h-4 w-4 text-muted-foreground" />
+                        <Link2 className="h-4 w-4 text-muted-foreground" />
                       )}
                     </button>
                   </div>

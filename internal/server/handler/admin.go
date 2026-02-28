@@ -123,25 +123,25 @@ func HandleGetItem(store *db.Store) gin.HandlerFunc {
 			items = []db.VaultItem{}
 		}
 
-		// Build fields map for response
-		fields := make(map[string]string, len(items))
-		for _, item := range items {
-			fields[item.ItemName] = item.Value
+		keys := make([]string, len(items))
+		for i, item := range items {
+			keys[i] = item.ItemName
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"vault_id": vaultID,
 			"section":  section,
-			"fields":   fields,
+			"keys":     keys,
 		})
 	}
 }
 
 type putItemRequest struct {
-	Fields map[string]string `json:"fields" binding:"required"`
+	Fields map[string]string `json:"fields"`
+	Delete []string          `json:"delete"`
 }
 
-// HandlePutItem handles PUT /v1/vaults/:id/items/:section — batch upsert fields.
+// HandlePutItem handles PUT /v1/vaults/:id/items/:section — merge upsert/delete fields.
 func HandlePutItem(store *db.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		vaultID := c.Param("id")
@@ -152,13 +152,13 @@ func HandlePutItem(store *db.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if len(req.Fields) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "fields must not be empty"})
+		if len(req.Fields) == 0 && len(req.Delete) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at least one of fields or delete must be provided"})
 			return
 		}
 
-		if err := store.SetItemFields(vaultID, section, req.Fields); err != nil {
-			log.Printf("SetItemFields(%q, %q) error: %v", vaultID, section, err)
+		if err := store.MergeItemFields(vaultID, section, req.Fields, req.Delete); err != nil {
+			log.Printf("MergeItemFields(%q, %q) error: %v", vaultID, section, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save item"})
 			return
 		}

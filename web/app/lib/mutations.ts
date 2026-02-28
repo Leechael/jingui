@@ -62,10 +62,12 @@ export function usePutItem(vaultId: string) {
     mutationFn: ({
       section,
       fields,
+      delete: deleteKeys,
     }: {
       section: string;
       fields: Record<string, string>;
-    }) => getClient().putItem(vaultId, section, fields),
+      delete?: string[];
+    }) => getClient().putItem(vaultId, section, fields, deleteKeys),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: vaultItemKeys.all(vaultId) });
       addToast("Item saved successfully");
