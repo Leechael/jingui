@@ -24,13 +24,16 @@ function InstancesPage() {
   const { data: instances } = useSuspenseQuery(instancesQuery());
   const [search, setSearch] = useState("");
 
-  const filtered = instances.filter(
-    (i) =>
-      i.fid.toLowerCase().includes(search.toLowerCase()) ||
-      i.bound_vault.toLowerCase().includes(search.toLowerCase()) ||
-      i.bound_item.toLowerCase().includes(search.toLowerCase()) ||
-      (i.label ?? "").toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = instances.filter((i) => {
+    const q = search.toLowerCase();
+    return (
+      i.fid.toLowerCase().includes(q) ||
+      i.bound_attestation_app_id.toLowerCase().includes(q) ||
+      i.bound_vault.toLowerCase().includes(q) ||
+      i.bound_item.toLowerCase().includes(q) ||
+      (i.label ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-4">
@@ -82,7 +85,9 @@ function InstancesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="px-4 py-3 text-left font-medium">FID</th>
+                <th className="px-4 py-3 text-left font-medium">
+                  Attestation App ID
+                </th>
                 <th className="px-4 py-3 text-left font-medium">Label</th>
                 <th className="px-4 py-3 text-left font-medium">Vault</th>
                 <th className="px-4 py-3 text-left font-medium">Item</th>
@@ -98,7 +103,7 @@ function InstancesPage() {
                       params={{ fid: inst.fid }}
                       className="font-mono text-xs font-medium text-primary hover:underline"
                     >
-                      {truncate(inst.fid, 16)}
+                      {truncate(inst.bound_attestation_app_id, 16)}
                     </Link>
                   </td>
                   <td className="px-4 py-3">{inst.label || "-"}</td>
