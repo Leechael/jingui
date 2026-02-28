@@ -25,11 +25,13 @@ export function AppForm({
   const [requiredScopes, setRequiredScopes] = useState(
     defaultValues?.required_scopes ?? "",
   );
-  const [credentialsJson, setCredentialsJson] = useState(
-    defaultValues?.credentials_json
-      ? JSON.stringify(defaultValues.credentials_json, null, 2)
-      : '{\n  "web": {}\n}',
-  );
+  const [credentialsJson, setCredentialsJson] = useState(() => {
+    const cj = defaultValues?.credentials_json;
+    if (cj && Object.keys(cj).length > 0) {
+      return JSON.stringify(cj, null, 2);
+    }
+    return '{\n  "web": {}\n}';
+  });
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

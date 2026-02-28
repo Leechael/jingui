@@ -21,6 +21,10 @@ export function SearchFilter({
     setLocal(value);
   }, [value]);
 
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current);
+  }, []);
+
   function handleChange(v: string) {
     setLocal(v);
     clearTimeout(timerRef.current);

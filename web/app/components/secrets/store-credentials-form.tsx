@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { KeyRound, X } from "lucide-react";
 import { appsQuery } from "~/lib/queries";
 import { usePutCredentials } from "~/lib/mutations";
 import {
   KeyValueEditor,
+  createPair,
   type KeyValuePair,
 } from "~/components/shared/key-value-editor";
 
@@ -22,11 +23,14 @@ export function StoreCredentialsForm({
   const { data: apps } = useSuspenseQuery(appsQuery());
   const [selectedApp, setSelectedApp] = useState("");
   const [item, setItem] = useState(defaultItem ?? "");
-  const [pairs, setPairs] = useState<KeyValuePair[]>([
-    { key: "", value: "" },
-  ]);
+  const [pairs, setPairs] = useState<KeyValuePair[]>([createPair()]);
 
   const putCreds = usePutCredentials(selectedApp);
+
+  // Sync item when the selected secret changes
+  useEffect(() => {
+    setItem(defaultItem ?? "");
+  }, [defaultItem]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,7 +47,7 @@ export function StoreCredentialsForm({
           onClose();
           setSelectedApp("");
           setItem(defaultItem ?? "");
-          setPairs([{ key: "", value: "" }]);
+          setPairs([createPair()]);
         },
       },
     );

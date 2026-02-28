@@ -64,7 +64,6 @@ function AppDetailPage() {
             name: app.name,
             service_type: app.service_type,
             required_scopes: app.required_scopes,
-            credentials_json: {},
           }}
           onSubmit={(data) =>
             updateApp.mutate(data, { onSuccess: () => setEditing(false) })

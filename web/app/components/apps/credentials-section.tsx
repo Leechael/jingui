@@ -4,6 +4,7 @@ import { usePutCredentials, useStartDeviceFlow } from "~/lib/mutations";
 import { getClient } from "~/lib/api-client";
 import {
   KeyValueEditor,
+  createPair,
   type KeyValuePair,
 } from "~/components/shared/key-value-editor";
 
@@ -44,7 +45,7 @@ function DirectCredentials({ appId }: { appId: string }) {
   const putCreds = usePutCredentials(appId);
   const [item, setItem] = useState("");
   const [pairs, setPairs] = useState<KeyValuePair[]>([
-    { key: "", value: "" },
+    createPair(),
   ]);
 
   function handleSubmit(e: React.FormEvent) {
@@ -59,7 +60,7 @@ function DirectCredentials({ appId }: { appId: string }) {
       {
         onSuccess: () => {
           setItem("");
-          setPairs([{ key: "", value: "" }]);
+          setPairs([createPair()]);
         },
       },
     );
@@ -130,10 +131,14 @@ function DeviceFlow({ appId }: { appId: string }) {
   const deviceFlow = useStartDeviceFlow(appId);
   const [copied, setCopied] = useState(false);
 
-  function handleCopy(text: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function handleCopy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard write can fail in insecure contexts
+    }
   }
 
   return (

@@ -151,8 +151,12 @@ class JinguiClient {
     );
   }
 
+  // Returns the gateway URL without embedding the token.
+  // The server's gateway endpoint requires Bearer auth, which browser
+  // redirects (window.open) cannot carry. Use the Device Flow tab
+  // instead, or configure the server for cookie-based auth on this endpoint.
   getOAuthGatewayUrl(appId: string): string {
-    return `${this.apiUrl}/v1/credentials/gateway/${encodeURIComponent(appId)}?token=${encodeURIComponent(this.token)}`;
+    return `${this.apiUrl}/v1/credentials/gateway/${encodeURIComponent(appId)}`;
   }
 
   startDeviceFlow(appId: string) {

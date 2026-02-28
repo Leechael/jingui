@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 interface ConfirmDeleteDialogProps {
@@ -23,6 +23,10 @@ export function ConfirmDeleteDialog({
   isPending = false,
 }: ConfirmDeleteDialogProps) {
   const [cascade, setCascade] = useState(false);
+
+  useEffect(() => {
+    if (open) setCascade(false);
+  }, [open]);
 
   if (!open) return null;
 
