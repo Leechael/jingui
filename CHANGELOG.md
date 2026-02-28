@@ -1,3 +1,8 @@
+## v0.1.3-beta.6 (2026-02-28)
+
+- fix: update tests for keys-only GET item response
+- feat: hide field values from admin API and UI
+
 ## v0.1.3-beta.5 (2026-02-28)
 
 - fix: guard against undefined dstack_app_id in instances list
