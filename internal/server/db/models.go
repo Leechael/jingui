@@ -14,7 +14,7 @@ type VaultItem struct {
 	ID        int64     `json:"id"`
 	VaultID   string    `json:"vault_id"`
 	ItemName  string    `json:"item_name"`
-	Section   *string   `json:"section"`
+	Section   string    `json:"section"`
 	Value     string    `json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

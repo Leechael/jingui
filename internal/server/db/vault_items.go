@@ -2,8 +2,14 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
+
+// ErrFieldNotFound is returned by GetFieldValue when the requested field does
+// not exist. Callers should use errors.Is to distinguish this from real DB
+// errors.
+var ErrFieldNotFound = errors.New("field not found")
 
 // UpsertField inserts or updates a single field in a vault item.
 func (s *Store) UpsertField(vaultID, section, itemName, value string) error {
@@ -86,7 +92,7 @@ func (s *Store) GetFieldValue(vaultID, section, itemName string) (string, error)
 		vaultID, section, itemName,
 	).Scan(&value)
 	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("field not found: %s/%s/%s", vaultID, section, itemName)
+		return "", fmt.Errorf("%w: %s/%s/%s", ErrFieldNotFound, vaultID, section, itemName)
 	}
 	if err != nil {
 		return "", fmt.Errorf("get field value: %w", err)

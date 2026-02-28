@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -321,7 +322,11 @@ func HandleFetchSecrets(store *db.Store, strict bool) gin.HandlerFunc {
 
 			value, err := store.GetFieldValue(ref.Vault, dbSection, dbItemName)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "field not found for reference: " + refStr})
+				if errors.Is(err, db.ErrFieldNotFound) {
+					c.JSON(http.StatusNotFound, gin.H{"error": "field not found for reference: " + refStr})
+				} else {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+				}
 				return
 			}
 

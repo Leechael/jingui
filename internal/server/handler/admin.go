@@ -152,6 +152,10 @@ func HandlePutItem(store *db.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		if len(req.Fields) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "fields must not be empty"})
+			return
+		}
 
 		if err := store.SetItemFields(vaultID, section, req.Fields); err != nil {
 			log.Printf("SetItemFields(%q, %q) error: %v", vaultID, section, err)

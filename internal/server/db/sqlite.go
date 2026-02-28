@@ -67,7 +67,7 @@ func (s *Store) migrate() error {
 			rowid INTEGER PRIMARY KEY AUTOINCREMENT,
 			vault_id TEXT NOT NULL,
 			item_name TEXT NOT NULL,
-			section TEXT,
+			section TEXT NOT NULL DEFAULT '',
 			value TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -126,9 +126,11 @@ func (s *Store) upgradeToSchemaV2() error {
 
 	// Also handle even older schema (user_secrets)
 	var hasUserSecrets int
-	s.db.QueryRow(
+	if err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'user_secrets'`,
-	).Scan(&hasUserSecrets)
+	).Scan(&hasUserSecrets); err != nil {
+		return fmt.Errorf("check user_secrets table existence: %w", err)
+	}
 
 	// Pin a single connection so PRAGMA foreign_keys=OFF and the transaction
 	// are guaranteed to execute on the same connection.
@@ -182,7 +184,9 @@ func (s *Store) upgradeToSchemaV2() error {
 	// 4. Copy tee_instances → new schema
 	// Check if old tee_instances exists and has bound_attestation_app_id
 	var teeCount int
-	tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'tee_instances'`).Scan(&teeCount)
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'tee_instances'`).Scan(&teeCount); err != nil {
+		return fmt.Errorf("check tee_instances table existence: %w", err)
+	}
 	if teeCount > 0 {
 		var teeTableSQL string
 		if err := tx.QueryRow(

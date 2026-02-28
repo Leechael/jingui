@@ -23,7 +23,7 @@ export function DebugPolicyToggle({ vaultId, fid }: DebugPolicyToggleProps) {
       <div>
         <p className="text-sm font-medium">Debug Read</p>
         <p className="text-xs text-muted-foreground">
-          Allow plaintext read for this vault
+          Allow plaintext read for this instance
           {isDefault && (
             <span className="ml-1 text-muted-foreground/60">(default)</span>
           )}

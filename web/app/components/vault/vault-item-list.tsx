@@ -17,7 +17,7 @@ export function VaultItemList({
   onSelectItem,
   onNewItem,
 }: VaultItemListProps) {
-  const { data: sections } = useQuery(vaultItemsQuery(vault));
+  const { data: sections, isLoading } = useQuery(vaultItemsQuery(vault));
   const [search, setSearch] = useState("");
 
   const items = useMemo(() => {
@@ -63,7 +63,7 @@ export function VaultItemList({
             </div>
           </button>
         ))}
-        {items.length === 0 && (
+        {!isLoading && items.length === 0 && (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             {search ? "No matching items" : "No items yet"}
           </div>
