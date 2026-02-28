@@ -18,12 +18,17 @@ type createAppRequest struct {
 }
 
 // isEmptyJSONObject returns true if data is a JSON object with no keys.
+// Returns false for null, arrays, strings, and other non-object types.
 func isEmptyJSONObject(data json.RawMessage) bool {
+	// json.Unmarshal decodes null into a nil map; reject that explicitly.
+	if len(data) == 0 || string(data) == "null" {
+		return false
+	}
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
 		return false
 	}
-	return len(m) == 0
+	return m != nil && len(m) == 0
 }
 
 // validateOAuthCredentials checks that credentials_json contains an

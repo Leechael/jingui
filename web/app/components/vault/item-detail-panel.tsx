@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Eye, EyeOff, Copy, Pencil, Trash2, Check } from "lucide-react";
 import {
   secretDetailQuery,
@@ -44,15 +44,6 @@ export function ItemDetailPanel({
   const [showDelete, setShowDelete] = useState(false);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  // Reset all local state when switching items to prevent secret leakage
-  useEffect(() => {
-    setEditing(false);
-    setPairs([]);
-    setShowDelete(false);
-    setRevealedKeys(new Set());
-    setCopiedKey(null);
-  }, [vault, item]);
 
   const boundInstances = useMemo(() => {
     if (!instances) return [];

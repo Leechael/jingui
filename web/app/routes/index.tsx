@@ -82,6 +82,7 @@ function VaultBrowser() {
       {/* Detail pane */}
       {selectedItem ? (
         <ItemDetailPanel
+          key={`${selectedVault}/${selectedItem}`}
           vault={selectedVault}
           item={selectedItem}
           onDeleted={onItemDeleted}
