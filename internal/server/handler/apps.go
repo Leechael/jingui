@@ -17,6 +17,33 @@ type createAppRequest struct {
 	CredentialsJSON json.RawMessage `json:"credentials_json"`
 }
 
+// isEmptyJSONObject returns true if data is a JSON object with no keys.
+func isEmptyJSONObject(data json.RawMessage) bool {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return false
+	}
+	return len(m) == 0
+}
+
+// validateOAuthCredentials checks that credentials_json contains an
+// "installed" or "web" key. Call only when credentials are non-empty.
+func validateOAuthCredentials(c *gin.Context, data json.RawMessage) bool {
+	var creds struct {
+		Installed *json.RawMessage `json:"installed"`
+		Web       *json.RawMessage `json:"web"`
+	}
+	if err := json.Unmarshal(data, &creds); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
+		return false
+	}
+	if creds.Installed == nil && creds.Web == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
+		return false
+	}
+	return true
+}
+
 // HandleCreateApp handles POST /v1/apps.
 func HandleCreateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -31,19 +58,9 @@ func HandleCreateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			req.CredentialsJSON = json.RawMessage(`{}`)
 		}
 
-		// Validate credentials_json only when non-trivial (not just {})
-		trimmed := string(req.CredentialsJSON)
-		if trimmed != "{}" {
-			var creds struct {
-				Installed *json.RawMessage `json:"installed"`
-				Web       *json.RawMessage `json:"web"`
-			}
-			if err := json.Unmarshal(req.CredentialsJSON, &creds); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
-				return
-			}
-			if creds.Installed == nil && creds.Web == nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
+		// Validate credentials_json only when non-empty
+		if !isEmptyJSONObject(req.CredentialsJSON) {
+			if !validateOAuthCredentials(c, req.CredentialsJSON) {
 				return
 			}
 		}
@@ -95,32 +112,32 @@ func HandleUpdateApp(store *db.Store, masterKey [32]byte) gin.HandlerFunc {
 			return
 		}
 
-		// Default empty credentials to {}
-		if len(req.CredentialsJSON) == 0 {
-			req.CredentialsJSON = json.RawMessage(`{}`)
-		}
-
-		// Validate credentials_json only when non-trivial (not just {})
-		trimmed := string(req.CredentialsJSON)
-		if trimmed != "{}" {
-			var creds struct {
-				Installed *json.RawMessage `json:"installed"`
-				Web       *json.RawMessage `json:"web"`
-			}
-			if err := json.Unmarshal(req.CredentialsJSON, &creds); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credentials_json format"})
-				return
-			}
-			if creds.Installed == nil && creds.Web == nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "credentials_json must contain 'installed' or 'web' key"})
-				return
-			}
-		}
-
-		encrypted, err := crypto.EncryptAtRest(masterKey, req.CredentialsJSON)
+		// Look up existing app for preserving credentials
+		existing, err := store.GetApp(appID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "encryption failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve app"})
 			return
+		}
+		if existing == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
+			return
+		}
+
+		// Determine encrypted credentials to use
+		var encrypted []byte
+		if len(req.CredentialsJSON) == 0 || isEmptyJSONObject(req.CredentialsJSON) {
+			// No credentials provided (or explicitly empty) — preserve existing
+			encrypted = existing.CredentialsEncrypted
+		} else {
+			// Non-empty credentials supplied — validate and encrypt
+			if !validateOAuthCredentials(c, req.CredentialsJSON) {
+				return
+			}
+			encrypted, err = crypto.EncryptAtRest(masterKey, req.CredentialsJSON)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "encryption failed"})
+				return
+			}
 		}
 
 		ok, err := store.UpdateApp(&db.App{
