@@ -1,3 +1,13 @@
+## v0.1.3-beta.3 (2026-02-28)
+
+- fix: key-based remount for item panel, reject JSON null in credentials
+- fix: reset item panel state on switch, preserve credentials on vault update
+- feat: vault-centric 1Password-like admin panel restructure
+- fix(web): make secrets page full-width layout
+- fix(web): improve secret detail panel clarity
+- fix(web): show Attestation App ID instead of FID in instance list
+- fix: resolve GHCR platform-specific digest instead of manifest index digest
+
 ## v0.1.3-beta.2 (2026-02-28)
 
 - fix: address code review findings
