@@ -1,3 +1,10 @@
+## v0.2.0 (2026-03-01)
+
+- fix: use versionsort.suffix to sort prerelease tags correctly
+- Release v0.1.3
+- fix: prevent empty-state flash during instance query loading
+- feat: add instance management to vault detail panel
+
 ## v0.1.3 (2026-03-01)
 
 - fix: prevent empty-state flash during instance query loading
