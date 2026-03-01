@@ -96,14 +96,20 @@ class JinguiClient {
     );
   }
 
-  getItem(vaultId: string, section: string) {
-    return this.request<{
+  async getItem(vaultId: string, section: string) {
+    const data = await this.request<{
       vault_id: string;
       section: string;
-      keys: string[];
+      keys?: string[];
+      fields?: Record<string, string>;
     }>(
       `/v1/vaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(section)}`,
     );
+    return {
+      vault_id: data.vault_id,
+      section: data.section,
+      keys: data.keys ?? (data.fields ? Object.keys(data.fields) : []),
+    };
   }
 
   putItem(
