@@ -1,3 +1,8 @@
+## v0.1.3 (2026-03-01)
+
+- fix: prevent empty-state flash during instance query loading
+- feat: add instance management to vault detail panel
+
 ## v0.1.3-beta.7 (2026-03-01)
 
 - fix: handle both fields and keys in getItem response
