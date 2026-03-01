@@ -19,7 +19,7 @@ Jingui ensures that secrets (API keys, OAuth tokens, credentials) are delivered 
 └─────────────┘
 ```
 
-1. **Server** stores encrypted credentials and manages OAuth flows.
+1. **Server** stores secrets in vaults and manages TEE instance access.
 2. **Client** runs inside the TEE, proves possession of its private key via a challenge-response protocol, receives secrets encrypted to its public key, decrypts them, and injects them as environment variables into the target process.
 3. **Lockdown** — on Linux/amd64, the child process is hardened with seccomp filters that block `ptrace` and `process_vm_readv`, plus `PR_SET_DUMPABLE=0`.
 4. **Output masking** — all secret values are redacted from stdout/stderr using Aho-Corasick multi-pattern matching.
@@ -29,7 +29,6 @@ Jingui ensures that secrets (API keys, OAuth tokens, credentials) are delivered 
 ### Server
 
 ```bash
-export JINGUI_MASTER_KEY="$(openssl rand -hex 32)"   # 64 hex chars
 export JINGUI_ADMIN_TOKEN="$(openssl rand -hex 16)"   # ≥16 chars
 jingui-server
 ```
@@ -38,7 +37,6 @@ Or with Docker:
 
 ```bash
 docker run -d \
-  -e JINGUI_MASTER_KEY="..." \
   -e JINGUI_ADMIN_TOKEN="..." \
   -v jingui-data:/data \
   -p 8080:8080 \
@@ -47,11 +45,10 @@ docker run -d \
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `JINGUI_MASTER_KEY` | Yes | — | 64 hex characters (32-byte AES key for at-rest encryption) |
 | `JINGUI_ADMIN_TOKEN` | Yes | — | Bearer token for admin APIs (min 16 chars) |
 | `JINGUI_DB_PATH` | No | `jingui.db` | SQLite database path |
 | `JINGUI_LISTEN_ADDR` | No | `:8080` | Listen address |
-| `JINGUI_BASE_URL` | No | `http://localhost:8080` | Public URL for OAuth callbacks |
+| `JINGUI_CORS_ORIGINS` | No | — | Comma-separated allowed CORS origins (for admin panel dev) |
 | `JINGUI_RATLS_STRICT` | No | `true` | Require client/server attestation exchange in challenge/fetch flow |
 | `JINGUI_LOG_LEVEL` | No | `info` | Log level (`debug`,`info`,`warn`,`error`) for RA-TLS handshake diagnostics |
 
@@ -158,18 +155,36 @@ docker build --target client -t jingui .
 ## API Overview
 
 - OpenAPI JSON: `/openapi.json` (also committed as `docs/openapi.json`)
+- Database schema: `docs/schema.md`
 
 **Admin endpoints** (require `Authorization: Bearer <ADMIN_TOKEN>`):
 
-### App management
+### Vault management
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/v1/apps` | Register a workload app (CVM/agent app identity) |
-| PUT | `/v1/apps/:app_id` | Update app metadata/credentials |
-| GET | `/v1/apps` | List workload apps (metadata only) |
-| GET | `/v1/apps/:app_id` | Get workload app metadata |
-| DELETE | `/v1/apps/:app_id` | Delete workload app (`?cascade=true` to delete dependent secrets/instances) |
+| POST | `/v1/vaults` | Create a vault |
+| GET | `/v1/vaults` | List vaults |
+| GET | `/v1/vaults/:id` | Get vault |
+| PUT | `/v1/vaults/:id` | Update vault name |
+| DELETE | `/v1/vaults/:id` | Delete vault (`?cascade=true` to delete items + access grants) |
+
+### Vault items
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/vaults/:id/items` | List sections in a vault |
+| GET | `/v1/vaults/:id/items/:section` | Get field keys for a section |
+| PUT | `/v1/vaults/:id/items/:section` | Upsert/delete fields (`{fields: {k:v}, delete: [k]}`) |
+| DELETE | `/v1/vaults/:id/items/:section` | Delete all fields in a section |
+
+### Vault ↔ Instance access
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/vaults/:id/instances` | List instances with access to this vault |
+| POST | `/v1/vaults/:id/instances/:fid` | Grant instance access to vault |
+| DELETE | `/v1/vaults/:id/instances/:fid` | Revoke instance access to vault |
 
 ### Instance management
 
@@ -177,47 +192,37 @@ FID (Fingerprint ID) = `hex(SHA1(public_key))` — a 40-char hex identifier deri
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/v1/instances` | Register a TEE instance (public key + binding) |
-| GET | `/v1/instances` | List registered TEE instances |
+| POST | `/v1/instances` | Register a TEE instance (public key + dstack_app_id) |
+| GET | `/v1/instances` | List all instances |
 | GET | `/v1/instances/:fid` | Get instance details |
-| PUT | `/v1/instances/:fid` | Update `bound_attestation_app_id` and `label` |
+| PUT | `/v1/instances/:fid` | Update `dstack_app_id` and `label` |
 | DELETE | `/v1/instances/:fid` | Delete an instance |
 
-### Secret management
+### Debug policy
+
+Per vault+instance pair control over `jingui read`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/secrets` | List secret metadata (supports `?vault=` filter) |
-| GET | `/v1/secrets/:vault/:item` | Get one secret metadata record |
-| DELETE | `/v1/secrets/:vault/:item` | Delete secret (`?cascade=true` deletes dependent instances) |
+| GET | `/v1/debug-policy/:vault/:fid` | Get debug-read policy (defaults to allow) |
+| PUT | `/v1/debug-policy/:vault/:fid` | Set `allow_read` for vault+instance |
 
-### Debug policy APIs (runtime item-level read control)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/v1/debug-policy/:vault/:item` | Get whether `jingui read` is allowed for this item |
-| PUT | `/v1/debug-policy/:vault/:item` | Update `allow_read_debug` at runtime |
-
-### Credential APIs
-
-| Method | Path | Description |
-|--------|------|-------------|
-| PUT | `/v1/credentials/:app_id` | Store secrets directly |
-| GET | `/v1/credentials/gateway/:app_id` | Start OAuth authorization flow |
-| POST | `/v1/credentials/device/:app_id` | Start OAuth device flow |
-| GET | `/v1/credentials/callback` | OAuth callback endpoint |
-
-**Client endpoints**:
+**Client endpoints** (no admin auth):
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/v1/secrets/challenge` | Request proof-of-possession challenge |
 | POST | `/v1/secrets/fetch` | Fetch encrypted secrets (after challenge) |
 
-## Manual verification
+## dstack Platform Constraints
 
-- Full end-to-end script: `scripts/manual-test.sh`
-- Step-by-step guide: `docs/manual-test-guide.md`
+- **App keys path**: `/dstack/.host-shared/.appkeys.json` is the default location for the X25519 private key file, determined by the dstack runtime environment.
+- **Key format**: X25519 (Curve25519) key pairs; ECIES encryption uses X25519 + AES-256-GCM.
+- **`dstack_app_id`**: Application identity from the dstack attestation chain, used for RA-TLS verification during the challenge/fetch flow.
+
+## Web Admin Panel
+
+Jingui includes a single-page admin panel (`web/`) for managing vaults, items, and instances through the browser. It is built separately and served as static files. Set `JINGUI_CORS_ORIGINS` to allow cross-origin requests during development.
 
 ## License
 
