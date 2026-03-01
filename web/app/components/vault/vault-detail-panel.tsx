@@ -15,7 +15,7 @@ interface VaultDetailPanelProps {
 
 export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
   const { data: vaultData, isLoading } = useQuery(vaultDetailQuery(vault));
-  const { data: instances } = useQuery(vaultInstancesQuery(vault));
+  const { data: instances, isLoading: isLoadingInstances } = useQuery(vaultInstancesQuery(vault));
   const deleteVault = useDeleteVault();
   const revokeVaultAccess = useRevokeVaultAccess(vault);
   const [showDelete, setShowDelete] = useState(false);
@@ -68,7 +68,12 @@ export function VaultDetailPanel({ vault, onDeleted }: VaultDetailPanelProps) {
               <Plus className="h-4 w-4" />
             </button>
           </div>
-          {instances && instances.length > 0 ? (
+          {isLoadingInstances ? (
+            <div className="space-y-2">
+              <div className="h-12 animate-pulse rounded bg-muted" />
+              <div className="h-12 animate-pulse rounded bg-muted" />
+            </div>
+          ) : instances && instances.length > 0 ? (
             instances.map((inst) => (
               <div key={inst.fid} className="space-y-2 rounded-md border p-3">
                 <div className="flex items-center justify-between">

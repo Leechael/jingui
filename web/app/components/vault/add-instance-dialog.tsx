@@ -22,7 +22,7 @@ export function AddInstanceDialog({
   vaultId,
   linkedFids,
 }: AddInstanceDialogProps) {
-  const { data: allInstances } = useQuery(instancesQuery());
+  const { data: allInstances, isLoading } = useQuery(instancesQuery());
   const grantAccess = useGrantVaultAccess(vaultId);
   const registerInstance = useRegisterInstance();
 
@@ -116,6 +116,10 @@ export function AddInstanceDialog({
                   </button>
                 </div>
               ))
+            ) : isLoading ? (
+              <p className="text-sm text-muted-foreground">
+                Loading instances...
+              </p>
             ) : (
               <p className="text-sm text-muted-foreground">
                 All instances are already linked.
