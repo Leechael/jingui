@@ -12,11 +12,9 @@ import (
 )
 
 type registerInstanceRequest struct {
-	PublicKey             string `json:"public_key" binding:"required"`
-	BoundVault            string `json:"bound_vault" binding:"required"`
-	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
-	BoundItem             string `json:"bound_item" binding:"required"`
-	Label                 string `json:"label"`
+	PublicKey   string `json:"public_key" binding:"required"`
+	DstackAppID string `json:"dstack_app_id" binding:"required"`
+	Label       string `json:"label"`
 }
 
 // HandleRegisterInstance handles POST /v1/instances.
@@ -39,12 +37,10 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 		fid := hex.EncodeToString(h[:])
 
 		inst := &db.TEEInstance{
-			FID:                   fid,
-			PublicKey:             pubKeyBytes,
-			BoundVault:            req.BoundVault,
-			BoundAttestationAppID: req.BoundAttestationAppID,
-			BoundItem:             req.BoundItem,
-			Label:                 req.Label,
+			FID:         fid,
+			PublicKey:   pubKeyBytes,
+			DstackAppID: req.DstackAppID,
+			Label:       req.Label,
 		}
 
 		if err := store.RegisterInstance(inst); err != nil {
@@ -53,10 +49,6 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 				c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("instance with FID %s already exists", fid)})
 			case db.ErrInstanceDuplicateKey:
 				c.JSON(http.StatusConflict, gin.H{"error": "another instance with this public key already exists"})
-			case db.ErrInstanceAppUserNotFound:
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf("vault %q with authorized item %q not found; register the vault and complete OAuth authorization first", req.BoundVault, req.BoundItem),
-				})
 			default:
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			}
@@ -68,8 +60,8 @@ func HandleRegisterInstance(store *db.Store) gin.HandlerFunc {
 }
 
 type updateInstanceRequest struct {
-	BoundAttestationAppID string `json:"bound_attestation_app_id" binding:"required"`
-	Label                 string `json:"label"`
+	DstackAppID string `json:"dstack_app_id" binding:"required"`
+	Label       string `json:"label"`
 }
 
 // HandleUpdateInstance handles PUT /v1/instances/:fid.
@@ -82,7 +74,7 @@ func HandleUpdateInstance(store *db.Store) gin.HandlerFunc {
 			return
 		}
 
-		updated, err := store.UpdateInstance(fid, req.BoundAttestationAppID, req.Label)
+		updated, err := store.UpdateInstance(fid, req.DstackAppID, req.Label)
 		if err != nil {
 			log.Printf("UpdateInstance(%q) error: %v", fid, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

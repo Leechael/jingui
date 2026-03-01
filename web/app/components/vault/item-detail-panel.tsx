@@ -1,20 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
-import { Eye, EyeOff, Copy, Pencil, Trash2, Check } from "lucide-react";
-import {
-  secretDetailQuery,
-  secretDataQuery,
-  instancesByVaultQuery,
-} from "~/lib/queries";
-import { useDeleteSecret, usePutCredentials } from "~/lib/mutations";
-import { DebugPolicyToggle } from "~/components/secrets/debug-policy-toggle";
+import { useState } from "react";
+import { Pencil, Trash2, Check, Link2 } from "lucide-react";
+import { vaultItemDetailQuery } from "~/lib/queries";
+import { usePutItem, useDeleteItem } from "~/lib/mutations";
 import { ConfirmDeleteDialog } from "~/components/shared/confirm-delete-dialog";
 import {
   KeyValueEditor,
   createPair,
   type KeyValuePair,
 } from "~/components/shared/key-value-editor";
-import { formatDateTime } from "~/lib/utils";
 import { addToast } from "~/lib/toast";
 
 interface ItemDetailPanelProps {
@@ -28,31 +22,22 @@ export function ItemDetailPanel({
   item,
   onDeleted,
 }: ItemDetailPanelProps) {
-  const { data: detail, isLoading: detailLoading } = useQuery(
-    secretDetailQuery(vault, item),
+  const { data: itemData, isLoading } = useQuery(
+    vaultItemDetailQuery(vault, item),
   );
-  const { data: secretData, isLoading: dataLoading } = useQuery(
-    secretDataQuery(vault, item),
-  );
-  const { data: instances } = useQuery(instancesByVaultQuery(vault));
-
-  const deleteSecret = useDeleteSecret();
-  const putCreds = usePutCredentials(vault);
+  const putItem = usePutItem(vault);
+  const deleteItem = useDeleteItem(vault);
 
   const [editing, setEditing] = useState(false);
   const [pairs, setPairs] = useState<KeyValuePair[]>([]);
+  const [originalKeys, setOriginalKeys] = useState<string[]>([]);
   const [showDelete, setShowDelete] = useState(false);
-  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const boundInstances = useMemo(() => {
-    if (!instances) return [];
-    return instances.filter((i) => i.bound_item === item);
-  }, [instances, item]);
+  const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
   function startEditing() {
-    const data = secretData?.data ?? {};
-    const initial = Object.entries(data).map(([k, v]) => createPair(k, v));
+    const keys = itemData?.keys ?? [];
+    setOriginalKeys(keys);
+    const initial = keys.map((k) => createPair(k, ""));
     if (initial.length === 0) initial.push(createPair());
     setPairs(initial);
     setEditing(true);
@@ -61,43 +46,43 @@ export function ItemDetailPanel({
   function cancelEditing() {
     setEditing(false);
     setPairs([]);
+    setOriginalKeys([]);
   }
 
   function handleSave() {
-    const secrets: Record<string, string> = {};
+    const fields: Record<string, string> = {};
+    const currentKeys = new Set<string>();
     for (const p of pairs) {
-      if (p.key.trim()) {
-        secrets[p.key.trim()] = p.value;
+      const key = p.key.trim();
+      if (key) {
+        currentKeys.add(key);
+        if (p.value) {
+          fields[key] = p.value;
+        }
       }
     }
-    putCreds.mutate(
-      { item, secrets },
+    const deleteKeys = originalKeys.filter((k) => !currentKeys.has(k));
+
+    putItem.mutate(
+      { section: item, fields, delete: deleteKeys },
       {
         onSuccess: () => {
           setEditing(false);
           setPairs([]);
+          setOriginalKeys([]);
         },
       },
     );
   }
 
-  function toggleReveal(key: string) {
-    setRevealedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  function copyRef(key: string) {
+    navigator.clipboard.writeText(`jingui://${vault}/${item}/${key}`);
+    setCopiedRef(key);
+    addToast("Reference URI copied");
+    setTimeout(() => setCopiedRef(null), 2000);
   }
 
-  function copyValue(key: string, value: string) {
-    navigator.clipboard.writeText(value);
-    setCopiedKey(key);
-    addToast("Copied to clipboard");
-    setTimeout(() => setCopiedKey(null), 2000);
-  }
-
-  if (detailLoading) {
+  if (isLoading) {
     return (
       <div className="flex-1 p-6">
         <div className="space-y-4">
@@ -109,16 +94,17 @@ export function ItemDetailPanel({
     );
   }
 
-  if (!detail) return null;
+  if (!itemData) return null;
+
+  const keys = itemData.keys ?? [];
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs text-muted-foreground">{detail.vault}</p>
-            <h3 className="text-lg font-semibold">{detail.item}</h3>
+            <p className="text-xs text-muted-foreground">{vault}</p>
+            <h3 className="text-lg font-semibold">{item}</h3>
           </div>
           {!editing && (
             <button
@@ -131,24 +117,26 @@ export function ItemDetailPanel({
           )}
         </div>
 
-        {/* Fields - View or Edit mode */}
         {editing ? (
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">Fields</label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Leave value blank to keep current value unchanged.
+              </p>
               <KeyValueEditor pairs={pairs} onChange={setPairs} />
             </div>
             <div className="flex gap-2">
               <button
                 onClick={handleSave}
-                disabled={putCreds.isPending}
+                disabled={putItem.isPending}
                 className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {putCreds.isPending ? "Saving..." : "Save"}
+                {putItem.isPending ? "Saving..." : "Save"}
               </button>
               <button
                 onClick={cancelEditing}
-                disabled={putCreds.isPending}
+                disabled={putItem.isPending}
                 className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
               >
                 Cancel
@@ -157,18 +145,8 @@ export function ItemDetailPanel({
           </div>
         ) : (
           <div className="space-y-1">
-            {dataLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-12 animate-pulse rounded bg-muted"
-                  />
-                ))}
-              </div>
-            ) : secretData &&
-              Object.keys(secretData.data).length > 0 ? (
-              Object.entries(secretData.data).map(([key, value]) => (
+            {keys.length > 0 ? (
+              keys.map((key) => (
                 <div
                   key={key}
                   className="flex items-center justify-between rounded-md border px-4 py-3"
@@ -177,35 +155,20 @@ export function ItemDetailPanel({
                     <p className="text-xs font-medium text-muted-foreground">
                       {key}
                     </p>
-                    <p className="text-sm font-mono truncate">
-                      {revealedKeys.has(key)
-                        ? value
-                        : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}
+                    <p className="text-sm font-mono truncate text-muted-foreground">
+                      ••••••••
                     </p>
                   </div>
                   <div className="flex items-center gap-1 ml-3 shrink-0">
                     <button
-                      onClick={() => toggleReveal(key)}
+                      onClick={() => copyRef(key)}
                       className="rounded-md p-1.5 hover:bg-accent transition-colors"
-                      title={
-                        revealedKeys.has(key) ? "Hide" : "Reveal"
-                      }
+                      title="Copy reference URI"
                     >
-                      {revealedKeys.has(key) ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => copyValue(key, value)}
-                      className="rounded-md p-1.5 hover:bg-accent transition-colors"
-                      title="Copy"
-                    >
-                      {copiedKey === key ? (
+                      {copiedRef === key ? (
                         <Check className="h-4 w-4 text-green-600" />
                       ) : (
-                        <Copy className="h-4 w-4 text-muted-foreground" />
+                        <Link2 className="h-4 w-4 text-muted-foreground" />
                       )}
                     </button>
                   </div>
@@ -225,48 +188,6 @@ export function ItemDetailPanel({
           </div>
         )}
 
-        {/* Metadata */}
-        <div className="space-y-3 text-sm border-t pt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Created</span>
-            <span>{formatDateTime(detail.created_at)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Updated</span>
-            <span>{formatDateTime(detail.updated_at)}</span>
-          </div>
-        </div>
-
-        {/* Debug Policy */}
-        <div className="border-t pt-4">
-          <DebugPolicyToggle vault={vault} item={item} />
-        </div>
-
-        {/* Bound Instances */}
-        {boundInstances.length > 0 && (
-          <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-2">Bound Instances</p>
-            <div className="space-y-1">
-              {boundInstances.map((inst) => (
-                <div
-                  key={inst.fid}
-                  className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                >
-                  <span className="truncate font-mono text-xs">
-                    {inst.label || inst.fid}
-                  </span>
-                  {inst.last_used_at && (
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {formatDateTime(inst.last_used_at)}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Delete */}
         <div className="border-t pt-4">
           <button
             onClick={() => setShowDelete(true)}
@@ -281,22 +202,17 @@ export function ItemDetailPanel({
       <ConfirmDeleteDialog
         open={showDelete}
         onClose={() => setShowDelete(false)}
-        onConfirm={(cascade) =>
-          deleteSecret.mutate(
-            { vault, item, cascade },
-            {
-              onSuccess: () => {
-                setShowDelete(false);
-                onDeleted();
-              },
+        onConfirm={() =>
+          deleteItem.mutate(item, {
+            onSuccess: () => {
+              setShowDelete(false);
+              onDeleted();
             },
-          )
+          })
         }
         title="Delete Item"
-        description={`This will permanently delete "${vault}/${item}".`}
-        showCascade
-        cascadeLabel="Also delete dependent instances"
-        isPending={deleteSecret.isPending}
+        description={`This will permanently delete "${vault}/${item}" and all its fields.`}
+        isPending={deleteItem.isPending}
       />
     </div>
   );

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"runtime"
 
+	"github.com/aspect-build/jingui/internal/attestation"
 	"github.com/aspect-build/jingui/internal/client"
 	"github.com/aspect-build/jingui/internal/crypto"
 	"github.com/aspect-build/jingui/internal/logx"
@@ -295,6 +297,11 @@ func showStatus(serverURL, appkeysPath string, insecure bool) error {
 	fmt.Printf("appkeys_path=%s\n", appkeysPath)
 	fmt.Printf("fid=%s\n", fid)
 	fmt.Printf("public_key=%s\n", hex.EncodeToString(pub))
+
+	collector := attestation.NewDstackInfoCollector("")
+	if bundle, err := collector.Collect(context.Background()); err == nil {
+		fmt.Printf("dstack_app_id=%s\n", bundle.AppID)
+	}
 
 	if err := client.CheckInstance(serverURL, fid, insecure); err != nil {
 		fmt.Printf("server=%s\n", serverURL)

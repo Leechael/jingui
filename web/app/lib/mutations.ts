@@ -1,62 +1,113 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getClient } from "./api-client";
-import { appKeys, instanceKeys, secretKeys, debugPolicyKeys } from "./queries";
+import {
+  vaultKeys,
+  vaultItemKeys,
+  instanceKeys,
+  debugPolicyKeys,
+} from "./queries";
 import { addToast } from "./toast";
 import type {
-  AppRequest,
   CreateVaultRequest,
+  UpdateVaultRequest,
   InstanceRequest,
   InstanceUpdateRequest,
-  CredentialsRequest,
   DebugPolicyRequest,
 } from "./types";
 
-// Apps
-export function useCreateApp() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: AppRequest) => getClient().createApp(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: appKeys.all });
-      addToast("Vault created successfully");
-    },
-    onError: (e) => addToast(e.message, "error"),
-  });
-}
-
+// Vaults
 export function useCreateVault() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateVaultRequest) => getClient().createVault(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: appKeys.all });
+      qc.invalidateQueries({ queryKey: vaultKeys.all });
       addToast("Vault created successfully");
     },
     onError: (e) => addToast(e.message, "error"),
   });
 }
 
-export function useUpdateApp(appId: string) {
+export function useUpdateVault(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: AppRequest) => getClient().updateApp(appId, data),
+    mutationFn: (data: UpdateVaultRequest) =>
+      getClient().updateVault(id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: appKeys.all });
-      qc.invalidateQueries({ queryKey: appKeys.detail(appId) });
+      qc.invalidateQueries({ queryKey: vaultKeys.all });
+      qc.invalidateQueries({ queryKey: vaultKeys.detail(id) });
       addToast("Vault updated successfully");
     },
     onError: (e) => addToast(e.message, "error"),
   });
 }
 
-export function useDeleteApp() {
+export function useDeleteVault() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ appId, cascade }: { appId: string; cascade: boolean }) =>
-      getClient().deleteApp(appId, cascade),
+    mutationFn: ({ id, cascade }: { id: string; cascade: boolean }) =>
+      getClient().deleteVault(id, cascade),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: appKeys.all });
+      qc.invalidateQueries({ queryKey: vaultKeys.all });
       addToast("Vault deleted successfully");
+    },
+    onError: (e) => addToast(e.message, "error"),
+  });
+}
+
+// Vault Items
+export function usePutItem(vaultId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      section,
+      fields,
+      delete: deleteKeys,
+    }: {
+      section: string;
+      fields: Record<string, string>;
+      delete?: string[];
+    }) => getClient().putItem(vaultId, section, fields, deleteKeys),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vaultItemKeys.all(vaultId) });
+      addToast("Item saved successfully");
+    },
+    onError: (e) => addToast(e.message, "error"),
+  });
+}
+
+export function useDeleteItem(vaultId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (section: string) => getClient().deleteItem(vaultId, section),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: vaultItemKeys.all(vaultId) });
+      addToast("Item deleted successfully");
+    },
+    onError: (e) => addToast(e.message, "error"),
+  });
+}
+
+// Vault ↔ Instance Access
+export function useGrantVaultAccess(vaultId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fid: string) => getClient().grantVaultAccess(vaultId, fid),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: instanceKeys.byVault(vaultId) });
+      addToast("Access granted successfully");
+    },
+    onError: (e) => addToast(e.message, "error"),
+  });
+}
+
+export function useRevokeVaultAccess(vaultId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fid: string) => getClient().revokeVaultAccess(vaultId, fid),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: instanceKeys.byVault(vaultId) });
+      addToast("Access revoked successfully");
     },
     onError: (e) => addToast(e.message, "error"),
   });
@@ -102,61 +153,18 @@ export function useDeleteInstance() {
   });
 }
 
-// Credentials
-export function usePutCredentials(appId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CredentialsRequest) =>
-      getClient().putCredentials(appId, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: appKeys.detail(appId) });
-      qc.invalidateQueries({ queryKey: secretKeys.all });
-      addToast("Credentials stored successfully");
-    },
-    onError: (e) => addToast(e.message, "error"),
-  });
-}
-
-export function useStartDeviceFlow(appId: string) {
-  return useMutation({
-    mutationFn: () => getClient().startDeviceFlow(appId),
-    onError: (e) => addToast(e.message, "error"),
-  });
-}
-
-// Secrets
-export function useDeleteSecret() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      vault,
-      item,
-      cascade,
-    }: {
-      vault: string;
-      item: string;
-      cascade: boolean;
-    }) => getClient().deleteSecret(vault, item, cascade),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: secretKeys.all });
-      addToast("Secret deleted successfully");
-    },
-    onError: (e) => addToast(e.message, "error"),
-  });
-}
-
 // Debug Policy
-export function useUpdateDebugPolicy(vault: string, item: string) {
+export function useUpdateDebugPolicy(vaultId: string, fid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: DebugPolicyRequest) =>
-      getClient().updateDebugPolicy(vault, item, data),
+      getClient().updateDebugPolicy(vaultId, fid, data),
     onSuccess: (res) => {
       qc.invalidateQueries({
-        queryKey: debugPolicyKeys.detail(vault, item),
+        queryKey: debugPolicyKeys.detail(vaultId, fid),
       });
       addToast(
-        `Debug read ${res.allow_read_debug ? "enabled" : "disabled"}`,
+        `Debug read ${res.allow_read ? "enabled" : "disabled"}`,
       );
     },
     onError: (e) => addToast(e.message, "error"),

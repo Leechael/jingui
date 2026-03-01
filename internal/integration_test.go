@@ -21,10 +21,8 @@ import (
 
 const testAdminToken = "test-admin-token-1234567890"
 
-func setupTestServer(t *testing.T) (*httptest.Server, *db.Store, [32]byte) {
+func setupTestServer(t *testing.T) (*httptest.Server, *db.Store) {
 	t.Helper()
-	var masterKey [32]byte
-	rand.Read(masterKey[:])
 
 	store, err := db.NewStore(":memory:")
 	if err != nil {
@@ -33,16 +31,14 @@ func setupTestServer(t *testing.T) (*httptest.Server, *db.Store, [32]byte) {
 	t.Cleanup(func() { store.Close() })
 
 	cfg := &server.Config{
-		MasterKey:  masterKey,
 		AdminToken: testAdminToken,
 	}
 
 	router := server.NewRouter(store, cfg)
 	ts := httptest.NewServer(router)
 	t.Cleanup(ts.Close)
-	cfg.BaseURL = ts.URL
 
-	return ts, store, masterKey
+	return ts, store
 }
 
 func adminRequest(method, url string, body []byte) (*http.Response, error) {
@@ -92,46 +88,34 @@ func solveFetchChallenge(t *testing.T, serverURL, fid string, teePriv [32]byte) 
 }
 
 func TestEndToEnd(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
+	ts, store := setupTestServer(t)
 
-	// Step 1: Register an app (with admin token)
-	credJSON := `{"installed":{"client_id":"test-client-id","client_secret":"test-client-secret","redirect_uris":["http://localhost"]}}`
-	appReq := map[string]interface{}{
-		"vault":            "gmail-app",
-		"name":             "Test Gmail App",
-		"service_type":     "gmail",
-		"required_scopes":  "https://mail.google.com/",
-		"credentials_json": json.RawMessage(credJSON),
-	}
-	appBody, _ := json.Marshal(appReq)
-	resp, err := adminRequest("POST", ts.URL+"/v1/apps", appBody)
+	// Step 1: Create a vault
+	vaultReq, _ := json.Marshal(map[string]string{
+		"id":   "gmail-vault",
+		"name": "Gmail Vault",
+	})
+	resp, err := adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
 	if err != nil {
-		t.Fatalf("POST /v1/apps: %v", err)
+		t.Fatalf("POST /v1/vaults: %v", err)
 	}
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("POST /v1/apps: status %d, body: %s", resp.StatusCode, body)
+		t.Fatalf("POST /v1/vaults: status %d, body: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 
-	// Step 2: Insert vault item (simulating OAuth callback)
-	tokenJSON, _ := json.Marshal(map[string]string{
+	// Step 2: Insert vault items (plaintext fields)
+	err = store.SetItemFields("gmail-vault", "alice@gmail.com", map[string]string{
+		"password":      "test-password-value",
 		"refresh_token": "test-refresh-token-value",
-	})
-	encrypted, err := crypto.EncryptAtRest(masterKey, tokenJSON)
-	if err != nil {
-		t.Fatalf("EncryptAtRest: %v", err)
-	}
-	err = store.UpsertVaultItem(&db.VaultItem{
-		Vault:           "gmail-app",
-		Item:            "user@example.com",
-		SecretEncrypted: encrypted,
+		"api_key":       "test-api-key-value",
 	})
 	if err != nil {
-		t.Fatalf("UpsertVaultItem: %v", err)
+		t.Fatalf("SetItemFields: %v", err)
 	}
 
-	// Step 3: Register TEE instance (with admin token)
+	// Step 3: Register TEE instance
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
@@ -140,15 +124,12 @@ func TestEndToEnd(t *testing.T) {
 	h := sha1.Sum(teePub)
 	fid := hex.EncodeToString(h[:])
 
-	instReq := map[string]string{
-		"public_key":               teePubHex,
-		"bound_vault":              "gmail-app",
-		"bound_attestation_app_id": "gmail-app",
-		"bound_item":               "user@example.com",
-		"label":                    "test-tee",
-	}
-	instBody, _ := json.Marshal(instReq)
-	resp, err = adminRequest("POST", ts.URL+"/v1/instances", instBody)
+	instReq, _ := json.Marshal(map[string]string{
+		"public_key":    teePubHex,
+		"dstack_app_id": "dstack-app-1",
+		"label":         "test-tee",
+	})
+	resp, err = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	if err != nil {
 		t.Fatalf("POST /v1/instances: %v", err)
 	}
@@ -163,11 +144,22 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("FID mismatch: got %q, want %q", instResp["fid"], fid)
 	}
 
-	// Step 4: Fetch secrets (no admin token needed)
+	// Step 4: Grant vault access to instance
+	resp, err = adminRequest("POST", ts.URL+"/v1/vaults/gmail-vault/instances/"+fid, nil)
+	if err != nil {
+		t.Fatalf("POST grant access: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("grant access: status %d, body: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// Step 5: Fetch secrets (no admin token needed)
 	refs := []string{
-		"jingui://gmail-app/user@example.com/client_id",
-		"jingui://gmail-app/user@example.com/client_secret",
-		"jingui://gmail-app/user@example.com/refresh_token",
+		"jingui://gmail-vault/alice@gmail.com/password",
+		"jingui://gmail-vault/alice@gmail.com/refresh_token",
+		"jingui://gmail-vault/alice@gmail.com/api_key",
 	}
 	fetchReq := map[string]interface{}{
 		"fid":               fid,
@@ -199,20 +191,20 @@ func TestEndToEnd(t *testing.T) {
 	// Replay same challenge should fail (one-time challenge)
 	replayResp, err := http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(fetchBody))
 	if err != nil {
-		t.Fatalf("POST replay /v1/secrets/fetch: %v", err)
+		t.Fatalf("POST replay: %v", err)
 	}
 	if replayResp.StatusCode != http.StatusUnauthorized {
 		body, _ := io.ReadAll(replayResp.Body)
 		replayResp.Body.Close()
-		t.Fatalf("expected 401 for challenge replay, got %d: %s", replayResp.StatusCode, body)
+		t.Fatalf("expected 401 for replay, got %d: %s", replayResp.StatusCode, body)
 	}
 	replayResp.Body.Close()
 
-	// Step 5: Decrypt and verify
+	// Step 6: Decrypt and verify
 	expected := map[string]string{
-		"jingui://gmail-app/user@example.com/client_id":     "test-client-id",
-		"jingui://gmail-app/user@example.com/client_secret": "test-client-secret",
-		"jingui://gmail-app/user@example.com/refresh_token": "test-refresh-token-value",
+		"jingui://gmail-vault/alice@gmail.com/password":      "test-password-value",
+		"jingui://gmail-vault/alice@gmail.com/refresh_token": "test-refresh-token-value",
+		"jingui://gmail-vault/alice@gmail.com/api_key":       "test-api-key-value",
 	}
 
 	for ref, b64 := range fetchResp.Secrets {
@@ -233,43 +225,35 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 
-	// Step 6: Access control — wrong vault → 403
-	badReq, _ := json.Marshal(map[string]interface{}{
+	// Step 7: Access control — wrong vault → 403
+	badReq := map[string]interface{}{
 		"fid":               fid,
-		"secret_references": []string{"jingui://other-app/user@example.com/client_id"},
-	})
-	challengeID, challengeResponse = solveFetchChallenge(t, ts.URL, fid, teePriv)
-	var badReqMap map[string]interface{}
-	if err := json.Unmarshal(badReq, &badReqMap); err != nil {
-		t.Fatalf("unmarshal badReq: %v", err)
+		"secret_references": []string{"jingui://other-vault/alice@gmail.com/password"},
 	}
-	badReqMap["challenge_id"] = challengeID
-	badReqMap["challenge_response"] = challengeResponse
-	badReq, _ = json.Marshal(badReqMap)
-	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badReq))
+	challengeID, challengeResponse = solveFetchChallenge(t, ts.URL, fid, teePriv)
+	badReq["challenge_id"] = challengeID
+	badReq["challenge_response"] = challengeResponse
+	badBody, _ := json.Marshal(badReq)
+	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badBody))
 	if resp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(resp.Body)
 		t.Errorf("expected 403 for wrong vault, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 
-	// Step 7: Access control — wrong item → 404
-	badReq2, _ := json.Marshal(map[string]interface{}{
+	// Step 8: Access control — missing field → 404
+	badReq2 := map[string]interface{}{
 		"fid":               fid,
-		"secret_references": []string{"jingui://gmail-app/other@example.com/client_id"},
-	})
-	challengeID, challengeResponse = solveFetchChallenge(t, ts.URL, fid, teePriv)
-	var badReqMap2 map[string]interface{}
-	if err := json.Unmarshal(badReq2, &badReqMap2); err != nil {
-		t.Fatalf("unmarshal badReq2: %v", err)
+		"secret_references": []string{"jingui://gmail-vault/alice@gmail.com/nonexistent_field"},
 	}
-	badReqMap2["challenge_id"] = challengeID
-	badReqMap2["challenge_response"] = challengeResponse
-	badReq2, _ = json.Marshal(badReqMap2)
-	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badReq2))
+	challengeID, challengeResponse = solveFetchChallenge(t, ts.URL, fid, teePriv)
+	badReq2["challenge_id"] = challengeID
+	badReq2["challenge_response"] = challengeResponse
+	badBody2, _ := json.Marshal(badReq2)
+	resp, _ = http.Post(ts.URL+"/v1/secrets/fetch", "application/json", bytes.NewReader(badBody2))
 	if resp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(resp.Body)
-		t.Errorf("expected 404 for wrong item, got %d: %s", resp.StatusCode, body)
+		t.Errorf("expected 404 for missing field, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 
@@ -278,107 +262,82 @@ func TestEndToEnd(t *testing.T) {
 
 // --- Admin CRUD endpoint tests ---
 
-func TestListApps(t *testing.T) {
-	ts, _, _ := setupTestServer(t)
+func TestListVaults_HTTP(t *testing.T) {
+	ts, _ := setupTestServer(t)
 
 	// Empty list
-	resp, err := adminRequest("GET", ts.URL+"/v1/apps", nil)
-	if err != nil {
-		t.Fatalf("GET /v1/apps: %v", err)
-	}
-	var apps []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&apps)
+	resp, _ := adminRequest("GET", ts.URL+"/v1/vaults", nil)
+	var vaults []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&vaults)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	if len(apps) != 0 {
-		t.Fatalf("expected 0 apps, got %d", len(apps))
+	if len(vaults) != 0 {
+		t.Fatalf("expected 0, got %d", len(vaults))
 	}
 
-	// Create an app then list
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	// Create then list
+	vaultReq, _ := json.Marshal(map[string]string{"id": "v1", "name": "V1"})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
 	resp.Body.Close()
 
-	resp, _ = adminRequest("GET", ts.URL+"/v1/apps", nil)
-	json.NewDecoder(resp.Body).Decode(&apps)
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults", nil)
+	json.NewDecoder(resp.Body).Decode(&vaults)
 	resp.Body.Close()
-	if len(apps) != 1 {
-		t.Fatalf("expected 1 app, got %d", len(apps))
+	if len(vaults) != 1 {
+		t.Fatalf("expected 1, got %d", len(vaults))
 	}
-	if apps[0]["vault"] != "app1" {
-		t.Errorf("expected app_id=app1, got %v", apps[0]["vault"])
+	if vaults[0]["id"] != "v1" {
+		t.Errorf("expected id=v1, got %v", vaults[0]["id"])
 	}
 }
 
-func TestGetApp(t *testing.T) {
-	ts, _, _ := setupTestServer(t)
+func TestGetVault_HTTP(t *testing.T) {
+	ts, _ := setupTestServer(t)
 
 	// 404
-	resp, _ := adminRequest("GET", ts.URL+"/v1/apps/nonexistent", nil)
+	resp, _ := adminRequest("GET", ts.URL+"/v1/vaults/nonexistent", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	// Create then get
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	vaultReq, _ := json.Marshal(map[string]string{"id": "v1", "name": "V1"})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
 	resp.Body.Close()
 
-	resp, _ = adminRequest("GET", ts.URL+"/v1/apps/app1", nil)
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1", nil)
 	var body map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	if body["vault"] != "app1" {
-		t.Errorf("expected app_id=app1, got %v", body["vault"])
-	}
-	if body["has_credentials"] != true {
-		t.Errorf("expected has_credentials=true, got %v", body["has_credentials"])
-	}
-	// Should NOT contain credentials_encrypted
-	if _, ok := body["credentials_encrypted"]; ok {
-		t.Error("response should not contain credentials_encrypted")
+	if body["id"] != "v1" {
+		t.Errorf("expected id=v1, got %v", body["id"])
 	}
 }
 
-func TestDeleteApp_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
+func TestDeleteVault_HTTP(t *testing.T) {
+	ts, store := setupTestServer(t)
 
 	// 404
-	resp, _ := adminRequest("DELETE", ts.URL+"/v1/apps/nonexistent", nil)
+	resp, _ := adminRequest("DELETE", ts.URL+"/v1/vaults/nonexistent", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Create app with dependent item → 409 without cascade
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	// Create vault with items → 409 without cascade
+	vaultReq, _ := json.Marshal(map[string]string{"id": "v1", "name": "V1"})
+	resp, _ = adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
 	resp.Body.Close()
 
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
+	store.SetItemFields("v1", "item1", map[string]string{"k": "v"})
 
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1", nil)
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/vaults/v1", nil)
 	if resp.StatusCode != http.StatusConflict {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 409, got %d: %s", resp.StatusCode, body)
@@ -386,7 +345,7 @@ func TestDeleteApp_HTTP(t *testing.T) {
 	resp.Body.Close()
 
 	// Cascade delete → 200
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1?cascade=true", nil)
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/vaults/v1?cascade=true", nil)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
@@ -398,27 +357,22 @@ func TestDeleteApp_HTTP(t *testing.T) {
 		t.Errorf("expected status=deleted, got %v", delBody["status"])
 	}
 
-	// Verify app is gone
-	resp, _ = adminRequest("GET", ts.URL+"/v1/apps/app1", nil)
+	// Verify gone
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 }
 
-func TestDeleteApp_Simple(t *testing.T) {
-	ts, _, _ := setupTestServer(t)
+func TestDeleteVault_Simple(t *testing.T) {
+	ts, _ := setupTestServer(t)
 
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ := adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	vaultReq, _ := json.Marshal(map[string]string{"id": "v1", "name": "V1"})
+	resp, _ := adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
 	resp.Body.Close()
 
-	// Simple delete (no dependents) → 200
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/apps/app1", nil)
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/vaults/v1", nil)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
@@ -426,8 +380,80 @@ func TestDeleteApp_Simple(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestVaultItems_HTTP(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	// Create vault
+	vaultReq, _ := json.Marshal(map[string]string{"id": "v1", "name": "V1"})
+	resp, _ := adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
+	resp.Body.Close()
+
+	// List items — empty
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1/items", nil)
+	var sections []string
+	json.NewDecoder(resp.Body).Decode(&sections)
+	resp.Body.Close()
+	if len(sections) != 0 {
+		t.Fatalf("expected 0 sections, got %d", len(sections))
+	}
+
+	// Put item
+	putReq, _ := json.Marshal(map[string]interface{}{
+		"fields": map[string]string{"password": "secret", "api_key": "key123"},
+	})
+	resp, _ = adminRequest("PUT", ts.URL+"/v1/vaults/v1/items/alice@gmail.com", putReq)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PUT item: expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// List items — 1 section
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1/items", nil)
+	json.NewDecoder(resp.Body).Decode(&sections)
+	resp.Body.Close()
+	if len(sections) != 1 || sections[0] != "alice@gmail.com" {
+		t.Fatalf("expected [alice@gmail.com], got %v", sections)
+	}
+
+	// Get item
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1/items/alice@gmail.com", nil)
+	var itemBody map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&itemBody)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET item: expected 200, got %d", resp.StatusCode)
+	}
+	rawKeys, ok := itemBody["keys"].([]interface{})
+	if !ok {
+		t.Fatalf("expected keys array, got %v", itemBody["keys"])
+	}
+	keySet := make(map[string]bool, len(rawKeys))
+	for _, k := range rawKeys {
+		keySet[k.(string)] = true
+	}
+	if !keySet["password"] || !keySet["api_key"] {
+		t.Errorf("expected keys to contain password and api_key, got %v", rawKeys)
+	}
+
+	// Delete item
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/vaults/v1/items/alice@gmail.com", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("DELETE item: expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// Delete nonexistent → 404
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/vaults/v1/items/nonexistent", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 func TestListInstances_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
+	ts, _ := setupTestServer(t)
 
 	// Empty list
 	resp, _ := adminRequest("GET", ts.URL+"/v1/instances", nil)
@@ -441,27 +467,14 @@ func TestListInstances_HTTP(t *testing.T) {
 		t.Fatalf("expected 0 instances, got %d", len(instances))
 	}
 
-	// Create app + item + instance, then list
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
-	resp.Body.Close()
-
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
-
+	// Register instance
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
-		"bound_attestation_app_id": "app1",
-		"bound_item":               "u@example.com", "label": "test",
+		"public_key":    hex.EncodeToString(teePub),
+		"dstack_app_id": "app1",
+		"label":         "test",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	resp.Body.Close()
@@ -472,7 +485,6 @@ func TestListInstances_HTTP(t *testing.T) {
 	if len(instances) != 1 {
 		t.Fatalf("expected 1 instance, got %d", len(instances))
 	}
-	// public_key should be hex string, not base64
 	pk, ok := instances[0]["public_key"].(string)
 	if !ok || len(pk) != 64 {
 		t.Errorf("expected 64-char hex public_key, got %q", pk)
@@ -480,7 +492,7 @@ func TestListInstances_HTTP(t *testing.T) {
 }
 
 func TestGetInstance_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
+	ts, _ := setupTestServer(t)
 
 	// 404
 	resp, _ := adminRequest("GET", ts.URL+"/v1/instances/nonexistent", nil)
@@ -490,26 +502,12 @@ func TestGetInstance_HTTP(t *testing.T) {
 	resp.Body.Close()
 
 	// Create and get
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
-	resp.Body.Close()
-
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
-
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
-		"bound_attestation_app_id": "app1",
-		"bound_item":               "u@example.com",
+		"public_key":    hex.EncodeToString(teePub),
+		"dstack_app_id": "app1",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	var instResp map[string]string
@@ -533,7 +531,7 @@ func TestGetInstance_HTTP(t *testing.T) {
 }
 
 func TestDeleteInstance_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
+	ts, _ := setupTestServer(t)
 
 	// 404
 	resp, _ := adminRequest("DELETE", ts.URL+"/v1/instances/nonexistent", nil)
@@ -543,26 +541,12 @@ func TestDeleteInstance_HTTP(t *testing.T) {
 	resp.Body.Close()
 
 	// Create and delete
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
-	resp.Body.Close()
-
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
-
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
-		"bound_attestation_app_id": "app1",
-		"bound_item":               "u@example.com",
+		"public_key":    hex.EncodeToString(teePub),
+		"dstack_app_id": "app1",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
 	var instResp map[string]string
@@ -582,7 +566,6 @@ func TestDeleteInstance_HTTP(t *testing.T) {
 		t.Errorf("expected status=deleted, got %v", delBody["status"])
 	}
 
-	// Verify gone
 	resp, _ = adminRequest("GET", ts.URL+"/v1/instances/"+fid, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
@@ -590,213 +573,84 @@ func TestDeleteInstance_HTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
-func TestListSecrets_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
+func TestVaultInstanceAccess_HTTP(t *testing.T) {
+	ts, _ := setupTestServer(t)
 
-	// Empty list
-	resp, _ := adminRequest("GET", ts.URL+"/v1/secrets", nil)
-	var secrets []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&secrets)
+	// Create vault and instance
+	vaultReq, _ := json.Marshal(map[string]string{"id": "v1", "name": "V1"})
+	resp, _ := adminRequest("POST", ts.URL+"/v1/vaults", vaultReq)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	if len(secrets) != 0 {
-		t.Fatalf("expected 0 secrets, got %d", len(secrets))
-	}
-
-	// Create app + items
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	for _, appID := range []string{"app1", "app2"} {
-		appReq, _ := json.Marshal(map[string]interface{}{
-			"vault": appID, "name": appID, "service_type": "gmail",
-			"credentials_json": json.RawMessage(credJSON),
-		})
-		resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
-		resp.Body.Close()
-	}
-
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{Vault: "app1", Item: "u1@example.com", SecretEncrypted: encrypted})
-	store.UpsertVaultItem(&db.VaultItem{Vault: "app1", Item: "u2@example.com", SecretEncrypted: encrypted})
-	store.UpsertVaultItem(&db.VaultItem{Vault: "app2", Item: "u1@example.com", SecretEncrypted: encrypted})
-
-	// List all
-	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets", nil)
-	json.NewDecoder(resp.Body).Decode(&secrets)
-	resp.Body.Close()
-	if len(secrets) != 3 {
-		t.Fatalf("expected 3 secrets, got %d", len(secrets))
-	}
-	// Should NOT contain secret_encrypted
-	for _, s := range secrets {
-		if _, ok := s["secret_encrypted"]; ok {
-			t.Error("response should not contain secret_encrypted")
-		}
-	}
-
-	// Filter by vault
-	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets?vault=app1", nil)
-	json.NewDecoder(resp.Body).Decode(&secrets)
-	resp.Body.Close()
-	if len(secrets) != 2 {
-		t.Fatalf("expected 2 secrets for app1, got %d", len(secrets))
-	}
-
-	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets?vault=app2", nil)
-	json.NewDecoder(resp.Body).Decode(&secrets)
-	resp.Body.Close()
-	if len(secrets) != 1 {
-		t.Fatalf("expected 1 secret for app2, got %d", len(secrets))
-	}
-}
-
-func TestGetSecret_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
-
-	// 404
-	resp, _ := adminRequest("GET", ts.URL+"/v1/secrets/app1/user1", nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", resp.StatusCode)
-	}
-	resp.Body.Close()
-
-	// Create and get
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
-	resp.Body.Close()
-
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
-
-	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets/app1/u@example.com", nil)
-	var body map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	if body["vault"] != "app1" {
-		t.Errorf("expected vault=app1, got %v", body["vault"])
-	}
-	if body["has_secret"] != true {
-		t.Errorf("expected has_secret=true, got %v", body["has_secret"])
-	}
-	if _, ok := body["secret_encrypted"]; ok {
-		t.Error("response should not contain secret_encrypted")
-	}
-}
-
-func TestDeleteSecret_HTTP(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
-
-	// 404
-	resp, _ := adminRequest("DELETE", ts.URL+"/v1/secrets/app1/user1", nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", resp.StatusCode)
-	}
-	resp.Body.Close()
-
-	// Create app + item + instance → 409 without cascade
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ = adminRequest("POST", ts.URL+"/v1/apps", appReq)
-	resp.Body.Close()
-
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
 
 	var teePriv [32]byte
 	rand.Read(teePriv[:])
 	teePub, _ := curve25519.X25519(teePriv[:], curve25519.Basepoint)
 	instReq, _ := json.Marshal(map[string]string{
-		"public_key": hex.EncodeToString(teePub), "bound_vault": "app1",
-		"bound_attestation_app_id": "app1",
-		"bound_item":               "u@example.com",
+		"public_key":    hex.EncodeToString(teePub),
+		"dstack_app_id": "app1",
 	})
 	resp, _ = adminRequest("POST", ts.URL+"/v1/instances", instReq)
+	var instResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&instResp)
 	resp.Body.Close()
+	fid := instResp["fid"]
 
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/secrets/app1/u@example.com", nil)
-	if resp.StatusCode != http.StatusConflict {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 409, got %d: %s", resp.StatusCode, body)
+	// List vault instances — empty
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1/instances", nil)
+	var vaultInstances []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&vaultInstances)
+	resp.Body.Close()
+	if len(vaultInstances) != 0 {
+		t.Fatalf("expected 0, got %d", len(vaultInstances))
 	}
-	resp.Body.Close()
 
-	// Cascade → 200
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/secrets/app1/u@example.com?cascade=true", nil)
+	// Grant access
+	resp, _ = adminRequest("POST", ts.URL+"/v1/vaults/v1/instances/"+fid, nil)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
-	}
-	var delBody map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&delBody)
-	resp.Body.Close()
-	if delBody["status"] != "deleted" {
-		t.Errorf("expected status=deleted, got %v", delBody["status"])
-	}
-
-	// Verify gone
-	resp, _ = adminRequest("GET", ts.URL+"/v1/secrets/app1/u@example.com", nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
+		t.Fatalf("grant: expected 200, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
-}
 
-func TestDeleteSecret_Simple(t *testing.T) {
-	ts, store, masterKey := setupTestServer(t)
-
-	credJSON := `{"installed":{"client_id":"cid","client_secret":"cs"}}`
-	appReq, _ := json.Marshal(map[string]interface{}{
-		"vault": "app1", "name": "App 1", "service_type": "gmail",
-		"credentials_json": json.RawMessage(credJSON),
-	})
-	resp, _ := adminRequest("POST", ts.URL+"/v1/apps", appReq)
+	// List vault instances — 1
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1/instances", nil)
+	json.NewDecoder(resp.Body).Decode(&vaultInstances)
 	resp.Body.Close()
+	if len(vaultInstances) != 1 {
+		t.Fatalf("expected 1, got %d", len(vaultInstances))
+	}
 
-	encrypted, _ := crypto.EncryptAtRest(masterKey, []byte(`{"refresh_token":"tok"}`))
-	store.UpsertVaultItem(&db.VaultItem{
-		Vault: "app1", Item: "u@example.com", SecretEncrypted: encrypted,
-	})
-
-	// No dependents → simple delete works
-	resp, _ = adminRequest("DELETE", ts.URL+"/v1/secrets/app1/u@example.com", nil)
+	// Revoke access
+	resp, _ = adminRequest("DELETE", ts.URL+"/v1/vaults/v1/instances/"+fid, nil)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+		t.Fatalf("revoke: expected 200, got %d: %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
+
+	// List vault instances — empty again
+	resp, _ = adminRequest("GET", ts.URL+"/v1/vaults/v1/instances", nil)
+	json.NewDecoder(resp.Body).Decode(&vaultInstances)
+	resp.Body.Close()
+	if len(vaultInstances) != 0 {
+		t.Fatalf("expected 0 after revoke, got %d", len(vaultInstances))
+	}
 }
 
 func TestAdminCRUD_RequiresAuth(t *testing.T) {
-	ts, _, _ := setupTestServer(t)
+	ts, _ := setupTestServer(t)
 
 	endpoints := []struct {
 		method string
 		path   string
 	}{
-		{"GET", "/v1/apps"},
-		{"GET", "/v1/apps/test"},
-		{"DELETE", "/v1/apps/test"},
+		{"GET", "/v1/vaults"},
+		{"GET", "/v1/vaults/test"},
+		{"DELETE", "/v1/vaults/test"},
 		{"GET", "/v1/instances"},
 		{"GET", "/v1/instances/test"},
 		{"DELETE", "/v1/instances/test"},
-		{"GET", "/v1/secrets"},
-		{"GET", "/v1/secrets/app/user"},
-		{"DELETE", "/v1/secrets/app/user"},
+		{"GET", "/v1/vaults/test/items"},
+		{"GET", "/v1/vaults/test/instances"},
 	}
 
 	for _, ep := range endpoints {
@@ -813,25 +667,22 @@ func TestAdminCRUD_RequiresAuth(t *testing.T) {
 }
 
 func TestAdminAuth_Rejected(t *testing.T) {
-	ts, _, _ := setupTestServer(t)
+	ts, _ := setupTestServer(t)
 
-	// POST /v1/apps without token → 401
-	appBody, _ := json.Marshal(map[string]interface{}{
-		"vault": "x", "name": "x", "service_type": "x",
-		"credentials_json": json.RawMessage(`{"installed":{"client_id":"a","client_secret":"b"}}`),
-	})
-	resp, err := http.Post(ts.URL+"/v1/apps", "application/json", bytes.NewReader(appBody))
+	// POST /v1/vaults without token → 401
+	vaultBody, _ := json.Marshal(map[string]string{"id": "x", "name": "x"})
+	resp, err := http.Post(ts.URL+"/v1/vaults", "application/json", bytes.NewReader(vaultBody))
 	if err != nil {
-		t.Fatalf("POST /v1/apps: %v", err)
+		t.Fatalf("POST /v1/vaults: %v", err)
 	}
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("POST /v1/apps without token: expected 401, got %d", resp.StatusCode)
+		t.Errorf("POST /v1/vaults without token: expected 401, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	// POST /v1/instances without token → 401
 	instBody, _ := json.Marshal(map[string]string{
-		"public_key": "aa", "bound_vault": "x", "bound_attestation_app_id": "x", "bound_item": "x",
+		"public_key": "aa", "dstack_app_id": "x",
 	})
 	resp, err = http.Post(ts.URL+"/v1/instances", "application/json", bytes.NewReader(instBody))
 	if err != nil {
@@ -842,16 +693,16 @@ func TestAdminAuth_Rejected(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// POST /v1/apps with wrong token → 401
-	req, _ := http.NewRequest("POST", ts.URL+"/v1/apps", bytes.NewReader(appBody))
+	// POST /v1/vaults with wrong token → 401
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/vaults", bytes.NewReader(vaultBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer wrong-token-here-1234")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("POST /v1/apps wrong token: %v", err)
+		t.Fatalf("POST /v1/vaults wrong token: %v", err)
 	}
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("POST /v1/apps wrong token: expected 401, got %d", resp.StatusCode)
+		t.Errorf("POST /v1/vaults wrong token: expected 401, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
@@ -863,7 +714,6 @@ func TestAdminAuth_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /v1/secrets/fetch: %v", err)
 	}
-	// Should not be 401 (it may be 400 or 404 depending on validation, but not 401)
 	if resp.StatusCode == http.StatusUnauthorized {
 		t.Error("POST /v1/secrets/fetch should not require admin auth")
 	}

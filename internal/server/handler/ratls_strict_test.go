@@ -19,21 +19,14 @@ func newStrictChallengeRouter(t *testing.T) *gin.Engine {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	app := &db.App{
-		Vault:                "a1",
-		Name:                 "app",
-		ServiceType:          "gmail",
-		RequiredScopes:       "",
-		CredentialsEncrypted: []byte{1},
+	if err := store.CreateVault(&db.Vault{ID: "a1", Name: "app"}); err != nil {
+		t.Fatalf("create vault: %v", err)
 	}
-	if err := store.CreateApp(app); err != nil {
-		t.Fatalf("create app: %v", err)
-	}
-	if err := store.UpsertVaultItem(&db.VaultItem{Vault: "a1", Item: "u1", SecretEncrypted: []byte{1}}); err != nil {
-		t.Fatalf("upsert user secret: %v", err)
-	}
-	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), BoundVault: "a1", BoundAttestationAppID: "a1", BoundItem: "u1"}); err != nil {
+	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), DstackAppID: "a1"}); err != nil {
 		t.Fatalf("register instance: %v", err)
+	}
+	if err := store.GrantVaultAccess("a1", "f1"); err != nil {
+		t.Fatalf("grant vault access: %v", err)
 	}
 
 	r := gin.New()
@@ -106,14 +99,14 @@ func TestIssueChallenge_StrictRejectsEmptyVerifiedAppID(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	if err := store.CreateApp(&db.App{Vault: "a1", Name: "app", ServiceType: "gmail", CredentialsEncrypted: []byte{1}}); err != nil {
-		t.Fatalf("create app: %v", err)
+	if err := store.CreateVault(&db.Vault{ID: "a1", Name: "app"}); err != nil {
+		t.Fatalf("create vault: %v", err)
 	}
-	if err := store.UpsertVaultItem(&db.VaultItem{Vault: "a1", Item: "u1", SecretEncrypted: []byte{1}}); err != nil {
-		t.Fatalf("upsert vault item: %v", err)
-	}
-	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), BoundVault: "a1", BoundAttestationAppID: "a1", BoundItem: "u1"}); err != nil {
+	if err := store.RegisterInstance(&db.TEEInstance{FID: "f1", PublicKey: bytes.Repeat([]byte{2}, 32), DstackAppID: "a1"}); err != nil {
 		t.Fatalf("register instance: %v", err)
+	}
+	if err := store.GrantVaultAccess("a1", "f1"); err != nil {
+		t.Fatalf("grant vault access: %v", err)
 	}
 
 	// Verifier returns empty AppID — simulates cert without app_id OID extension.

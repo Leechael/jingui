@@ -39,17 +39,14 @@ func setupStrictFlow(t *testing.T) (*gin.Engine, [32]byte, string) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	masterKey := [32]byte{}
-	for i := range masterKey {
-		masterKey[i] = byte(i + 1)
+	// Create vault
+	if err := store.CreateVault(&db.Vault{ID: "a1", Name: "app"}); err != nil {
+		t.Fatalf("create vault: %v", err)
 	}
 
-	app := &db.App{Vault: "a1", Name: "app", ServiceType: "gmail", CredentialsEncrypted: []byte("x")}
-	if err := store.CreateApp(app); err != nil {
-		t.Fatalf("create app: %v", err)
-	}
-	if err := store.UpsertVaultItem(&db.VaultItem{Vault: "a1", Item: "u1", SecretEncrypted: []byte("x")}); err != nil {
-		t.Fatalf("upsert user secret: %v", err)
+	// Store a field
+	if err := store.SetItemFields("a1", "u1", map[string]string{"client_id": "test-cid"}); err != nil {
+		t.Fatalf("set item fields: %v", err)
 	}
 
 	var priv [32]byte
@@ -62,15 +59,20 @@ func setupStrictFlow(t *testing.T) (*gin.Engine, [32]byte, string) {
 	}
 	h := sha1.Sum(pub)
 	fid := hex.EncodeToString(h[:])
-	if err := store.RegisterInstance(&db.TEEInstance{FID: fid, PublicKey: pub, BoundVault: "a1", BoundAttestationAppID: "a1", BoundItem: "u1"}); err != nil {
+	if err := store.RegisterInstance(&db.TEEInstance{FID: fid, PublicKey: pub, DstackAppID: "a1"}); err != nil {
 		t.Fatalf("register instance: %v", err)
+	}
+
+	// Grant vault access
+	if err := store.GrantVaultAccess("a1", fid); err != nil {
+		t.Fatalf("grant vault access: %v", err)
 	}
 
 	r := gin.New()
 	verifier := testVerifier{identity: attestation.VerifiedIdentity{AppID: "a1"}}
 	collector := fakeCollector{bundle: attestation.Bundle{AppID: "server-app", AppCert: "pem"}}
 	r.POST("/v1/secrets/challenge", HandleIssueChallenge(store, true, verifier, collector))
-	r.POST("/v1/secrets/fetch", HandleFetchSecrets(store, masterKey, true))
+	r.POST("/v1/secrets/fetch", HandleFetchSecrets(store, true))
 
 	return r, priv, fid
 }
@@ -116,8 +118,11 @@ func TestStrictFlow_ChallengeThenFetchState(t *testing.T) {
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/secrets/fetch", bytes.NewReader(fetchReq))
 	req2.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w2, req2)
-	// secret resolution fails because fixtures are dummy, but auth/state gate should pass and reach resolver.
+	// With real data now, fetch should succeed
 	if w2.Code == http.StatusUnauthorized {
 		t.Fatalf("expected non-401 after RA-verified challenge, got body=%s", w2.Body.String())
+	}
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w2.Code, w2.Body.String())
 	}
 }

@@ -1,3 +1,37 @@
+## v0.2.0 (2026-03-01)
+
+- fix: use versionsort.suffix to sort prerelease tags correctly
+- Release v0.1.3
+- fix: prevent empty-state flash during instance query loading
+- feat: add instance management to vault detail panel
+
+## v0.1.3 (2026-03-01)
+
+- fix: prevent empty-state flash during instance query loading
+- feat: add instance management to vault detail panel
+
+## v0.1.3-beta.7 (2026-03-01)
+
+- fix: handle both fields and keys in getItem response
+
+## v0.1.3-beta.6 (2026-02-28)
+
+- fix: update tests for keys-only GET item response
+- feat: hide field values from admin API and UI
+
+## v0.1.3-beta.5 (2026-02-28)
+
+- fix: guard against undefined dstack_app_id in instances list
+
+## v0.1.3-beta.4 (2026-02-28)
+
+- fix: assert empty list body in BDD scenario for nonexistent vault
+- fix: address review findings from schema v2 migration
+- fix: align BDD feature expectations with actual handler responses
+- fix: update BDD tests and feature files for schema v2
+- feat: vault-centric schema restructure (schema v2)
+- feat: admin panel + CORS support (#9)
+
 ## v0.1.3-beta.3 (2026-02-28)
 
 - fix: key-based remount for item panel, reject JSON null in credentials

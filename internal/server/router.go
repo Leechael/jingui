@@ -26,40 +26,41 @@ func NewRouter(store *db.Store, cfg *Config) *gin.Engine {
 
 	v1 := r.Group("/v1")
 	{
-		// Admin-authenticated management endpoints
-		v1.POST("/apps", admin, handler.HandleCreateApp(store, cfg.MasterKey))
-		v1.PUT("/apps/:app_id", admin, handler.HandleUpdateApp(store, cfg.MasterKey))
-		v1.GET("/apps", admin, handler.HandleListApps(store))
-		v1.GET("/apps/:app_id", admin, handler.HandleGetApp(store))
-		v1.DELETE("/apps/:app_id", admin, handler.HandleDeleteApp(store))
+		// Vaults
+		v1.POST("/vaults", admin, handler.HandleCreateVault(store))
+		v1.GET("/vaults", admin, handler.HandleListVaults(store))
+		v1.GET("/vaults/:id", admin, handler.HandleGetVault(store))
+		v1.PUT("/vaults/:id", admin, handler.HandleUpdateVault(store))
+		v1.DELETE("/vaults/:id", admin, handler.HandleDeleteVault(store))
 
+		// Vault items
+		v1.GET("/vaults/:id/items", admin, handler.HandleListItems(store))
+		v1.GET("/vaults/:id/items/:section", admin, handler.HandleGetItem(store))
+		v1.PUT("/vaults/:id/items/:section", admin, handler.HandlePutItem(store))
+		v1.DELETE("/vaults/:id/items/:section", admin, handler.HandleDeleteItem(store))
+
+		// Vault ↔ Instance access
+		v1.GET("/vaults/:id/instances", admin, handler.HandleListVaultInstances(store))
+		v1.POST("/vaults/:id/instances/:fid", admin, handler.HandleGrantVaultAccess(store))
+		v1.DELETE("/vaults/:id/instances/:fid", admin, handler.HandleRevokeVaultAccess(store))
+
+		// Instances
 		v1.POST("/instances", admin, handler.HandleRegisterInstance(store))
 		v1.GET("/instances", admin, handler.HandleListInstances(store))
 		v1.GET("/instances/:fid", admin, handler.HandleGetInstance(store))
 		v1.PUT("/instances/:fid", admin, handler.HandleUpdateInstance(store))
 		v1.DELETE("/instances/:fid", admin, handler.HandleDeleteInstance(store))
 
-		v1.GET("/secrets", admin, handler.HandleListSecrets(store))
-		v1.GET("/secrets/:vault/:item", admin, handler.HandleGetSecret(store, cfg.MasterKey))
-		v1.GET("/secrets/:vault/:item/data", admin, handler.HandleGetSecretData(store, cfg.MasterKey))
-		v1.DELETE("/secrets/:vault/:item", admin, handler.HandleDeleteSecret(store))
-
-		v1.GET("/debug-policy/:vault/:item", admin, handler.HandleGetDebugPolicy(store))
-		v1.PUT("/debug-policy/:vault/:item", admin, handler.HandlePutDebugPolicy(store))
-
-		v1.GET("/credentials/gateway/:app_id", admin, handler.HandleOAuthGateway(store, cfg.MasterKey, cfg.BaseURL))
-		v1.POST("/credentials/device/:app_id", admin, handler.HandleDeviceAuth(store, cfg.MasterKey))
-		v1.PUT("/credentials/:app_id", admin, handler.HandlePutCredentials(store, cfg.MasterKey))
-
-		// OAuth callback — no admin auth (Google redirects the user's browser here)
-		v1.GET("/credentials/callback", handler.HandleOAuthCallback(store, cfg.MasterKey, cfg.BaseURL))
+		// Debug policy
+		v1.GET("/debug-policy/:vault/:fid", admin, handler.HandleGetDebugPolicy(store))
+		v1.PUT("/debug-policy/:vault/:fid", admin, handler.HandlePutDebugPolicy(store))
 
 		// Client proof-of-possession challenge (no admin auth).
 		v1.POST("/secrets/challenge", handler.HandleIssueChallenge(store, cfg.RATLSStrict, verifier, collector))
 
 		// Secret fetch — requires proof-of-possession challenge response, then returns
 		// payload encrypted to the registered TEE public key.
-		v1.POST("/secrets/fetch", handler.HandleFetchSecrets(store, cfg.MasterKey, cfg.RATLSStrict))
+		v1.POST("/secrets/fetch", handler.HandleFetchSecrets(store, cfg.RATLSStrict))
 	}
 
 	return r

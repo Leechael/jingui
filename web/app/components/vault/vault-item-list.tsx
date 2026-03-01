@@ -1,11 +1,10 @@
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Plus, KeyRound } from "lucide-react";
 import { SearchFilter } from "~/components/shared/search-filter";
-import type { SecretListItem } from "~/lib/types";
-import { formatDateTime } from "~/lib/utils";
+import { vaultItemsQuery } from "~/lib/queries";
 
 interface VaultItemListProps {
-  secrets: SecretListItem[];
   vault: string;
   selectedItem: string | null;
   onSelectItem: (item: string) => void;
@@ -13,22 +12,20 @@ interface VaultItemListProps {
 }
 
 export function VaultItemList({
-  secrets,
   vault,
   selectedItem,
   onSelectItem,
   onNewItem,
 }: VaultItemListProps) {
+  const { data: sections, isLoading } = useQuery(vaultItemsQuery(vault));
   const [search, setSearch] = useState("");
 
   const items = useMemo(() => {
-    const vaultItems = secrets
-      .filter((s) => s.vault === vault)
-      .sort((a, b) => a.item.localeCompare(b.item));
-    if (!search) return vaultItems;
+    const sorted = (sections ?? []).slice().sort((a, b) => a.localeCompare(b));
+    if (!search) return sorted;
     const q = search.toLowerCase();
-    return vaultItems.filter((s) => s.item.toLowerCase().includes(q));
-  }, [secrets, vault, search]);
+    return sorted.filter((s) => s.toLowerCase().includes(q));
+  }, [sections, search]);
 
   return (
     <div className="flex flex-col h-full border-r">
@@ -50,26 +47,23 @@ export function VaultItemList({
         />
       </div>
       <div className="flex-1 overflow-y-auto">
-        {items.map((s) => (
+        {items.map((section) => (
           <button
-            key={s.item}
-            onClick={() => onSelectItem(s.item)}
+            key={section}
+            onClick={() => onSelectItem(section)}
             className={`flex w-full items-start gap-3 px-3 py-3 text-left transition-colors border-b ${
-              selectedItem === s.item
+              selectedItem === section
                 ? "bg-accent"
                 : "hover:bg-accent/50"
             }`}
           >
             <KeyRound className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{s.item}</p>
-              <p className="text-xs text-muted-foreground">
-                {formatDateTime(s.updated_at)}
-              </p>
+              <p className="text-sm font-medium truncate">{section}</p>
             </div>
           </button>
         ))}
-        {items.length === 0 && (
+        {!isLoading && items.length === 0 && (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             {search ? "No matching items" : "No items yet"}
           </div>

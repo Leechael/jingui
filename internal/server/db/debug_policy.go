@@ -5,18 +5,19 @@ import (
 	"fmt"
 )
 
-func (s *Store) UpsertDebugPolicy(vault, item string, allow bool) error {
+// UpsertDebugPolicy inserts or updates a debug policy for a vault+instance pair.
+func (s *Store) UpsertDebugPolicy(vaultID, fid string, allow bool) error {
 	allowInt := 0
 	if allow {
 		allowInt = 1
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO debug_policies (app_id, item, allow_read_debug)
+		`INSERT INTO debug_policies (vault_id, fid, allow_read)
 		 VALUES (?, ?, ?)
-		 ON CONFLICT(app_id, item) DO UPDATE SET
-			allow_read_debug = excluded.allow_read_debug,
+		 ON CONFLICT(vault_id, fid) DO UPDATE SET
+			allow_read = excluded.allow_read,
 			updated_at = CURRENT_TIMESTAMP`,
-		vault, item, allowInt,
+		vaultID, fid, allowInt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert debug policy: %w", err)
@@ -24,19 +25,20 @@ func (s *Store) UpsertDebugPolicy(vault, item string, allow bool) error {
 	return nil
 }
 
-func (s *Store) GetDebugPolicy(vault, item string) (*DebugPolicy, error) {
+// GetDebugPolicy retrieves a debug policy. Returns nil if no policy exists.
+func (s *Store) GetDebugPolicy(vaultID, fid string) (*DebugPolicy, error) {
 	p := &DebugPolicy{}
 	var allowInt int
 	err := s.db.QueryRow(
-		`SELECT app_id, item, allow_read_debug, updated_at
-		 FROM debug_policies WHERE app_id = ? AND item = ?`, vault, item,
-	).Scan(&p.Vault, &p.Item, &allowInt, &p.UpdatedAt)
+		`SELECT vault_id, fid, allow_read, updated_at
+		 FROM debug_policies WHERE vault_id = ? AND fid = ?`, vaultID, fid,
+	).Scan(&p.VaultID, &p.FID, &allowInt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get debug policy: %w", err)
 	}
-	p.AllowReadDebug = allowInt != 0
+	p.AllowRead = allowInt != 0
 	return p, nil
 }

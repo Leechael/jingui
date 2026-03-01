@@ -27,9 +27,8 @@ import (
 
 // bddContext holds per-scenario state.
 type bddContext struct {
-	ts        *httptest.Server
-	store     *db.Store
-	masterKey [32]byte
+	ts    *httptest.Server
+	store *db.Store
 
 	// TEE instance state
 	teePriv [32]byte
@@ -63,10 +62,6 @@ func (b *bddContext) theServerIsRunning() error {
 	if b.ts != nil {
 		return nil // already running
 	}
-	var masterKey [32]byte
-	if _, err := rand.Read(masterKey[:]); err != nil {
-		return err
-	}
 
 	store, err := db.NewStore(":memory:")
 	if err != nil {
@@ -74,56 +69,44 @@ func (b *bddContext) theServerIsRunning() error {
 	}
 
 	cfg := &server.Config{
-		MasterKey:  masterKey,
 		AdminToken: testAdminToken,
 	}
 
 	router := server.NewRouter(store, cfg)
 	ts := httptest.NewServer(router)
-	cfg.BaseURL = ts.URL
 
 	b.ts = ts
 	b.store = store
-	b.masterKey = masterKey
 	return nil
 }
 
-func (b *bddContext) anAppExistsWithCredentials(appID, serviceType string, credJSON *godog.DocString) error {
-	body, _ := json.Marshal(map[string]interface{}{
-		"vault":            appID,
-		"name":             appID,
-		"service_type":     serviceType,
-		"credentials_json": json.RawMessage(credJSON.Content),
+func (b *bddContext) aVaultExistsWithItems(vaultID, section string, table *godog.Table) error {
+	// Create vault
+	body, _ := json.Marshal(map[string]string{
+		"id":   vaultID,
+		"name": vaultID,
 	})
-	resp, err := adminRequest("POST", b.ts.URL+"/v1/apps", body)
+	resp, err := adminRequest("POST", b.ts.URL+"/v1/vaults", body)
 	if err != nil {
 		return err
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("register app %s: got status %d", appID, resp.StatusCode)
+		return fmt.Errorf("create vault %s: got status %d", vaultID, resp.StatusCode)
+	}
+
+	// Store items
+	fields := make(map[string]string)
+	for _, row := range table.Rows[1:] { // skip header
+		fields[row.Cells[0].Value] = row.Cells[1].Value
+	}
+	if err := b.store.SetItemFields(vaultID, section, fields); err != nil {
+		return fmt.Errorf("set item fields: %w", err)
 	}
 	return nil
 }
 
-func (b *bddContext) userHasSecretsForApp(userID, appID string, table *godog.Table) error {
-	secrets := make(map[string]string)
-	for _, row := range table.Rows[1:] { // skip header
-		secrets[row.Cells[0].Value] = row.Cells[1].Value
-	}
-	secretJSON, _ := json.Marshal(secrets)
-	encrypted, err := crypto.EncryptAtRest(b.masterKey, secretJSON)
-	if err != nil {
-		return err
-	}
-	return b.store.UpsertVaultItem(&db.VaultItem{
-		Vault:           appID,
-		Item:            userID,
-		SecretEncrypted: encrypted,
-	})
-}
-
-func (b *bddContext) aTEEInstanceIsRegistered(appID, userID string) error {
+func (b *bddContext) aTEEInstanceIsRegisteredWithDstackAppID(dstackAppID string) error {
 	var priv [32]byte
 	rand.Read(priv[:])
 	pub, _ := curve25519.X25519(priv[:], curve25519.Basepoint)
@@ -133,11 +116,9 @@ func (b *bddContext) aTEEInstanceIsRegistered(appID, userID string) error {
 	fid := hex.EncodeToString(h[:])
 
 	body, _ := json.Marshal(map[string]string{
-		"public_key":               pubHex,
-		"bound_vault":              appID,
-		"bound_attestation_app_id": appID,
-		"bound_item":            userID,
-		"label":                    "bdd-tee",
+		"public_key":    pubHex,
+		"dstack_app_id": dstackAppID,
+		"label":         "bdd-tee",
 	})
 	resp, err := adminRequest("POST", b.ts.URL+"/v1/instances", body)
 	if err != nil {
@@ -153,16 +134,26 @@ func (b *bddContext) aTEEInstanceIsRegistered(appID, userID string) error {
 	return nil
 }
 
+func (b *bddContext) theInstanceHasAccessToVault(vaultID string) error {
+	resp, err := adminRequest("POST", b.ts.URL+"/v1/vaults/"+vaultID+"/instances/"+b.fid, nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("grant vault access: got status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // ── When steps ──────────────────────────────────────────────────────
 
-func (b *bddContext) iRegisterAnApp(appID, serviceType string, credJSON *godog.DocString) error {
-	body, _ := json.Marshal(map[string]interface{}{
-		"vault":            appID,
-		"name":             appID,
-		"service_type":     serviceType,
-		"credentials_json": json.RawMessage(credJSON.Content),
+func (b *bddContext) iCreateAVault(vaultID, name string) error {
+	body, _ := json.Marshal(map[string]string{
+		"id":   vaultID,
+		"name": name,
 	})
-	resp, err := adminRequest("POST", b.ts.URL+"/v1/apps", body)
+	resp, err := adminRequest("POST", b.ts.URL+"/v1/vaults", body)
 	if err != nil {
 		return err
 	}
@@ -172,16 +163,26 @@ func (b *bddContext) iRegisterAnApp(appID, serviceType string, credJSON *godog.D
 	return nil
 }
 
-func (b *bddContext) iPUTCredentials(appID, userID string, table *godog.Table) error {
-	secrets := make(map[string]string)
+func (b *bddContext) iPUTItems(vaultID, section string, table *godog.Table) error {
+	fields := make(map[string]string)
 	for _, row := range table.Rows[1:] {
-		secrets[row.Cells[0].Value] = row.Cells[1].Value
+		fields[row.Cells[0].Value] = row.Cells[1].Value
 	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"item":    userID,
-		"secrets": secrets,
+		"fields": fields,
 	})
-	resp, err := adminRequest("PUT", b.ts.URL+"/v1/credentials/"+appID, body)
+	resp, err := adminRequest("PUT", b.ts.URL+"/v1/vaults/"+vaultID+"/items/"+section, body)
+	if err != nil {
+		return err
+	}
+	b.lastBody, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	b.lastStatus = resp.StatusCode
+	return nil
+}
+
+func (b *bddContext) iGETItemsForVault(vaultID string) error {
+	resp, err := adminRequest("GET", b.ts.URL+"/v1/vaults/"+vaultID+"/items", nil)
 	if err != nil {
 		return err
 	}
@@ -308,6 +309,25 @@ func (b *bddContext) theResponseJSONShouldBe(key, expected string) error {
 	return nil
 }
 
+func (b *bddContext) theResponseShouldBeAnEmptyList() error {
+	var raw json.RawMessage
+	if err := json.Unmarshal(b.lastBody, &raw); err != nil {
+		return fmt.Errorf("parse response: %w (body: %s)", err, b.lastBody)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return fmt.Errorf("expected JSON array, got: %s", b.lastBody)
+	}
+	var list []interface{}
+	if err := json.Unmarshal(b.lastBody, &list); err != nil {
+		return fmt.Errorf("parse response as list: %w (body: %s)", err, b.lastBody)
+	}
+	if len(list) != 0 {
+		return fmt.Errorf("expected empty list, got %d elements", len(list))
+	}
+	return nil
+}
+
 func (b *bddContext) theDecryptedSecretShouldBe(ref, expected string) error {
 	b64, ok := b.fetchedSecrets[ref]
 	if !ok {
@@ -341,13 +361,14 @@ func TestBDD(t *testing.T) {
 
 			// Given
 			sc.Step(`^the server is running$`, b.theServerIsRunning)
-			sc.Step(`^an app "([^"]*)" of type "([^"]*)" exists with credentials:$`, b.anAppExistsWithCredentials)
-			sc.Step(`^user "([^"]*)" has secrets for app "([^"]*)":$`, b.userHasSecretsForApp)
-			sc.Step(`^a TEE instance is registered for app "([^"]*)" and user "([^"]*)"$`, b.aTEEInstanceIsRegistered)
+			sc.Step(`^a vault "([^"]*)" exists with items for "([^"]*)":$`, b.aVaultExistsWithItems)
+			sc.Step(`^a TEE instance is registered with dstack app id "([^"]*)"$`, b.aTEEInstanceIsRegisteredWithDstackAppID)
+			sc.Step(`^the instance has access to vault "([^"]*)"$`, b.theInstanceHasAccessToVault)
 
 			// When
-			sc.Step(`^I register an app "([^"]*)" of type "([^"]*)" with credentials:$`, b.iRegisterAnApp)
-			sc.Step(`^I PUT credentials for app "([^"]*)" with user "([^"]*)" and secrets:$`, b.iPUTCredentials)
+			sc.Step(`^I create a vault "([^"]*)" with name "([^"]*)"$`, b.iCreateAVault)
+			sc.Step(`^I PUT items for vault "([^"]*)" section "([^"]*)" with fields:$`, b.iPUTItems)
+			sc.Step(`^I GET items for vault "([^"]*)"$`, b.iGETItemsForVault)
 			sc.Step(`^I POST to "([^"]*)"$`, b.iPOSTTo)
 			sc.Step(`^I POST to "([^"]*)" with JSON:$`, b.iPOSTToWithJSON)
 			sc.Step(`^I request a challenge for the TEE instance$`, b.iRequestAChallenge)
@@ -356,6 +377,7 @@ func TestBDD(t *testing.T) {
 			// Then
 			sc.Step(`^the response status should be (\d+)$`, b.theResponseStatusShouldBe)
 			sc.Step(`^the response JSON "([^"]*)" should be "([^"]*)"$`, b.theResponseJSONShouldBe)
+			sc.Step(`^the response should be an empty list$`, b.theResponseShouldBeAnEmptyList)
 			sc.Step(`^the decrypted secret "([^"]*)" should be "([^"]*)"$`, b.theDecryptedSecretShouldBe)
 		},
 		Options: &godog.Options{

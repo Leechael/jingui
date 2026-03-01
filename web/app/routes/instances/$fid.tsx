@@ -28,13 +28,13 @@ function InstanceDetailPage() {
   const deleteInstance = useDeleteInstance();
   const [editing, setEditing] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
-  const [editAppId, setEditAppId] = useState(instance.bound_attestation_app_id);
+  const [editAppId, setEditAppId] = useState(instance.dstack_app_id);
   const [editLabel, setEditLabel] = useState(instance.label);
 
   function handleUpdate(e: React.FormEvent) {
     e.preventDefault();
     updateInstance.mutate(
-      { bound_attestation_app_id: editAppId, label: editLabel || undefined },
+      { dstack_app_id: editAppId, label: editLabel || undefined },
       { onSuccess: () => setEditing(false) },
     );
   }
@@ -70,7 +70,7 @@ function InstanceDetailPage() {
       {editing ? (
         <form onSubmit={handleUpdate} className="max-w-lg space-y-4 rounded-lg border p-6">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Attestation App ID</label>
+            <label className="text-sm font-medium">Dstack App ID</label>
             <input
               type="text"
               value={editAppId}
@@ -115,17 +115,9 @@ function InstanceDetailPage() {
               <p className="font-mono text-xs break-all">{instance.public_key}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Bound Vault</span>
-              <p className="font-medium">{instance.bound_vault}</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Bound Item</span>
-              <p className="font-medium">{instance.bound_item}</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Attestation App ID</span>
+              <span className="text-muted-foreground">Dstack App ID</span>
               <p className="font-mono text-xs break-all">
-                {instance.bound_attestation_app_id}
+                {instance.dstack_app_id}
               </p>
             </div>
             <div>
