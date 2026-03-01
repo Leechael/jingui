@@ -30,7 +30,9 @@ if [[ -n "$PRERELEASE" ]]; then
 fi
 
 # Fetch the latest v* tag (sorted by semver). Default to v0.0.0 if none exist.
-LATEST=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+# versionsort.suffix=- ensures prerelease tags (v1.0.0-beta.1) sort before
+# their stable counterpart (v1.0.0), matching semver ordering.
+LATEST=$(git -c 'versionsort.suffix=-' tag --list 'v*' --sort=-version:refname | head -n1)
 LATEST="${LATEST:-v0.0.0}"
 
 # Strip leading 'v'
