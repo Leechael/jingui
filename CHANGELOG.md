@@ -1,3 +1,7 @@
+## v0.1.3-beta.7 (2026-03-01)
+
+- fix: handle both fields and keys in getItem response
+
 ## v0.1.3-beta.6 (2026-02-28)
 
 - fix: update tests for keys-only GET item response
