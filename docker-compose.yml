@@ -1,0 +1,21 @@
+services:
+  app:
+    image: ghcr.io/leechael/jingui-server:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - jingui-data:/data
+    environment:
+      JINGUI_ADMIN_TOKEN: ${JINGUI_ADMIN_TOKEN}
+      JINGUI_DB_PATH: /data/jingui.db
+      JINGUI_CORS_ORIGINS: "http://localhost:5173"
+
+  web:
+    image: ghcr.io/leechael/jingui-web:latest
+    ports:
+      - "5173:5173"
+    depends_on:
+      - app
+
+volumes:
+  jingui-data:
