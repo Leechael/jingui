@@ -1,3 +1,9 @@
+## v0.3.0-beta.1 (2026-03-02)
+
+- feat: add web Docker image and docker-compose.yml
+- docs: overhaul documentation for schema v2
+- feat: vault-centric schema restructure (schema v2) (#10)
+
 ## v0.2.0 (2026-03-01)
 
 - fix: use versionsort.suffix to sort prerelease tags correctly
