@@ -3,6 +3,18 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Bump type: major, minor, or patch"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+      prerelease:
+        description: "Prerelease label (optional): alpha, beta, or rc"
+        required: false
+        type: choice
+        options: ["", alpha, beta, rc]
 
 permissions:
   contents: write
@@ -11,8 +23,30 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            chmod +x scripts/bump-version.sh
+            VERSION=$(scripts/bump-version.sh "${{ inputs.release_type }}" "${{ inputs.prerelease }}")
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Resolved version: ${VERSION}"
 
       - uses: actions/setup-go@v5
         with:
@@ -35,7 +69,7 @@ jobs:
           GOOS: linux
           GOARCH: amd64
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           LDFLAGS="-X github.com/aspect-build/jingui/internal/version.Version=${VERSION} -X github.com/aspect-build/jingui/internal/version.GitCommit=${COMMIT}"
           go build -ldflags "${LDFLAGS}" -o jingui-linux-amd64 ./cmd/jingui
@@ -60,7 +94,7 @@ jobs:
       - name: Generate changelog
         run: |
           chmod +x scripts/generate-changelog.sh
-          scripts/generate-changelog.sh "${{ github.ref_name }}"
+          scripts/generate-changelog.sh "${{ needs.release.outputs.version }}"
 
       - name: Commit changelog to default branch
         run: |
@@ -70,7 +104,7 @@ jobs:
           git checkout main
           git stash pop
           git add CHANGELOG.md
-          git commit -m "Update CHANGELOG for ${{ github.ref_name }}"
+          git commit -m "Update CHANGELOG for ${{ needs.release.outputs.version }}"
           git push origin main
 
       - name: Download all artifacts
@@ -79,14 +113,22 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Create tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git tag "${{ needs.release.outputs.version }}"
+          git push origin "${{ needs.release.outputs.version }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.release.outputs.version }}
           files: dist/*
           generate_release_notes: true
+          prerelease: ${{ needs.release.outputs.is_prerelease == 'true' }}
 
   docker:
-    needs: publish
+    needs: [release, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,9 +152,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}-server
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=raw,value=${{ needs.release.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.is_prerelease == 'false' }}
 
       - name: Build and push server image
         uses: docker/build-push-action@v6
@@ -124,7 +165,7 @@ jobs:
           tags: ${{ steps.meta-server.outputs.tags }}
           labels: ${{ steps.meta-server.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ needs.release.outputs.version }}
             COMMIT=${{ github.sha }}
             DCAP_QVL_REF=c201e5e2b312
 
@@ -134,9 +175,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=raw,value=${{ needs.release.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.is_prerelease == 'false' }}
 
       - name: Build and push client image
         uses: docker/build-push-action@v6
@@ -148,7 +188,7 @@ jobs:
           tags: ${{ steps.meta-client.outputs.tags }}
           labels: ${{ steps.meta-client.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ needs.release.outputs.version }}
             COMMIT=${{ github.sha }}
             DCAP_QVL_REF=c201e5e2b312
 
@@ -158,9 +198,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}-web
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=raw,value=${{ needs.release.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.is_prerelease == 'false' }}
 
       - name: Build and push web image
         uses: docker/build-push-action@v6
