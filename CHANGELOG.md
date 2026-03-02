@@ -1,3 +1,8 @@
+## v0.3.0-beta.2 (2026-03-02)
+
+- fix: split release triggers — dispatch on Release, comment-only on Release Command
+- feat: add web Docker image and docker-compose.yml (#11)
+
 ## v0.3.0-beta.1 (2026-03-02)
 
 - feat: add web Docker image and docker-compose.yml
