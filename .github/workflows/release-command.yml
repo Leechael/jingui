@@ -389,6 +389,25 @@ jobs:
             COMMIT=${{ github.sha }}
             DCAP_QVL_REF=c201e5e2b312
 
+      - name: Docker metadata (web)
+        id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-web
+          tags: |
+            type=raw,value=${{ needs.release.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.parse.outputs.prerelease == '' }}
+
+      - name: Build and push web image
+        id: push-web
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+
       # ── Resolve actual GHCR digests (platform-specific, not index) ───
       - name: Resolve GHCR digests
         id: ghcr
@@ -415,9 +434,11 @@ jobs:
 
           SERVER_DIGEST=$(get_platform_digest "ghcr.io/${REPO}-server:${VERSION}")
           CLIENT_DIGEST=$(get_platform_digest "ghcr.io/${REPO}:${VERSION}")
+          WEB_DIGEST=$(get_platform_digest "ghcr.io/${REPO}-web:${VERSION}")
 
           echo "server_digest=${SERVER_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "client_digest=${CLIENT_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "web_digest=${WEB_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
 
       # ── Update progress comment ──────────────────────────────────────
@@ -430,8 +451,10 @@ jobs:
             const repo = '${{ steps.ghcr.outputs.repo }}';
             const serverDigest = '${{ steps.ghcr.outputs.server_digest }}';
             const clientDigest = '${{ steps.ghcr.outputs.client_digest }}';
+            const webDigest = '${{ steps.ghcr.outputs.web_digest }}';
             const serverImage = `ghcr.io/${repo}-server:${version}@${serverDigest}`;
             const clientImage = `ghcr.io/${repo}:${version}@${clientDigest}`;
+            const webImage = `ghcr.io/${repo}-web:${version}@${webDigest}`;
             const body = [
               `### ✅ Released ${version}`,
               '',
@@ -441,6 +464,7 @@ jobs:
               '```',
               serverImage,
               clientImage,
+              webImage,
               '```',
             ].join('\n');
             await github.rest.issues.updateComment({
